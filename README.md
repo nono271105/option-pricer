@@ -105,7 +105,7 @@ Construction et analyse de stratégies options multi-legs avec données de march
 
 **Métriques calculées automatiquement** : coût total, breakevens, gain maximum, perte maximum et grecs agrégés BSM (Δ, Γ, Θ, ν, ρ) de tous les legs.
 
-
+<img width="1440" height="900" alt="Stratégies" src="https://github.com/user-attachments/assets/c0396c3a-7c3c-4074-9223-34216933df86" />
 
 ---
 
