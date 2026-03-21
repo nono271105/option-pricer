@@ -34,13 +34,14 @@
 - **Taux sans risque SOFR** depuis l'API FRED
 - **Dividendes** et **volatilité implicite** extraits automatiquement depuis les chaînes d'options
 - Cache TTL thread-safe pour limiter les appels API
+- Cache TTL thread-safe pour limiter les appels API
 
 ### Grecs
 Delta (Δ), Gamma (Γ), Theta (Θ/jour), Vega (ν), Rho (ρ), calculés analytiquement (BSM) ou par différences finies (CRR)
 
 ---
 
-## Interface 6 onglets
+## Interface 7 onglets
 
 ### 1 · Calculateur BSM
 
@@ -61,6 +62,7 @@ Pricing américain par arbre binomial. Comparaison directe avec le prix BSM euro
 ### 3 · Simulation matricielle
 
 Heatmap croisée volatilité × prix sous-jacent visualise l'impact combiné de Gamma et Vega sur le prix du call.
+Heatmap croisée volatilité × prix sous-jacent visualise l'impact combiné de Gamma et Vega sur le prix du call.
 
 <img width="1440" alt="Simulation" src="https://github.com/user-attachments/assets/b9099d90-6d76-47b0-b9b6-904ba023f67c"/>
 
@@ -76,7 +78,7 @@ Tracé IV vs Strike par inversion numérique de BSM (méthode de Brent) sur les 
 
 ### 5 · Surface IV 3D (Plotly)
 
-Surface de volatilité implicite interactive  axes Strike × Maturité × IV. Interpolation Griddata cubique, export HTML.
+Surface de volatilité implicite interactive axes Strike × Maturité × IV. Interpolation Griddata cubique, export HTML.
 
 <img width="1440" alt="Surface IV 3D" src="https://github.com/user-attachments/assets/5387adeb-0db6-4213-917b-ad3700dd6651"/>
 
@@ -86,7 +88,24 @@ Surface de volatilité implicite interactive  axes Strike × Maturité × IV. In
 
 Pricing analytique + Monte Carlo pour barrières, asiatiques, lookbacks et digitales. Trajectoires GBM simulées, distribution des payoffs et profil à maturité.
 
-<img width="1440" height="900" alt="Capture d’écran 2026-03-18 à 02 59 34" src="https://github.com/user-attachments/assets/da66bcd2-fe51-4363-b707-d87c1c668b1a" />
+<img width="1440" height="900" alt="Options Exotiques" src="https://github.com/user-attachments/assets/da66bcd2-fe51-4363-b707-d87c1c668b1a" />
+
+---
+
+### 7 · Stratégies
+
+Construction et analyse de stratégies options multi-legs avec données de marché en temps réel.
+
+**22 stratégies disponibles en 5 familles**
+- Positions de base : Long/Short Call, Long/Short Put
+- Spreads directionnels : Bull/Bear Call Spread, Bull/Bear Put Spread
+- Volatilité : Long/Short Straddle, Long/Short Strangle
+- Butterflies : Call/Put/Iron Butterfly (long et short)
+- Condors : Call/Put/Iron Condor (long et short)
+
+**Métriques calculées automatiquement** : coût total, breakevens, gain maximum, perte maximum et grecs agrégés BSM (Δ, Γ, Θ, ν, ρ) de tous les legs.
+
+
 
 ---
 
@@ -107,8 +126,8 @@ Pricing analytique + Monte Carlo pour barrières, asiatiques, lookbacks et digit
 
 ```bash
 # 1. Cloner le dépôt
-git clone https://github.com/nono271105/option_pricer.git
-cd option_pricer
+git clone https://github.com/nono271105/option-pricer.git
+cd option-pricer
 
 # 2. Environnement virtuel
 python -m venv venv
@@ -135,12 +154,13 @@ python main.py
 ```
 option_pricer/
 ├── main.py                       # Point d'entrée
-├── gui_app.py                    # Interface PyQt5  6 onglets
+├── gui_app.py                    # Interface PyQt5 7 onglets
 ├── option_models.py              # BSM, CRR, Grecs
 ├── exotic_options_models.py      # Barrières, Asiatiques, Lookback, Digitales
 ├── exotic_options_tab.py         # Onglet options exotiques
+├── strategy_manager.py           # Moteur de calcul des stratégies
+├── strategy_tab.py               # Onglet stratégies
 ├── data_fetcher.py               # yfinance + FRED API + cache TTL
-├── strategy_manager.py           # Payoffs long/short
 ├── simulation_tab.py             # Heatmap simulation
 ├── volatility_smile_tab.py       # Smile de volatilité
 ├── volatility_surface_tab.py     # Surface IV 3D Plotly
@@ -169,8 +189,8 @@ option_pricer/
 
 ## Licence
 
-MIT  voir [`LICENSE`](LICENSE).
+MIT voir [`LICENSE`](LICENSE).
 
 ---
 
-*Dernière mise à jour : mars 2026  ajout de l'onglet Options Exotiques et benchmark vs DerivaGem*
+*Dernière mise à jour : mars 2026 ajout de l'onglet Stratégies (v2.1)*
