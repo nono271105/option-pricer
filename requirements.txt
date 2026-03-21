@@ -1,0 +1,10 @@
+yfinance
+requests
+python-dotenv
+pandas
+numpy
+PyQt5
+PyQtWebEngine
+matplotlib
+scipy
+plotly
