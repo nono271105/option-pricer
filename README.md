@@ -33,14 +33,14 @@
 - **Prix spot** via Yahoo Finance (`yfinance`)
 - **Taux sans risque SOFR** depuis l'API FRED
 - **Dividendes** et **volatilité implicite** extraits automatiquement depuis les chaînes d'options
-- Cache TTL thread-safe (1 heure) pour limiter les appels API
+- Cache TTL thread-safe pour limiter les appels API
 
 ### Grecs
 Delta (Δ), Gamma (Γ), Theta (Θ/jour), Vega (ν), Rho (ρ), calculés analytiquement (BSM) ou par différences finies (CRR)
 
 ---
 
-## Interface — 6 onglets
+## Interface 6 onglets
 
 ### 1 · Calculateur BSM
 
@@ -60,7 +60,7 @@ Pricing américain par arbre binomial. Comparaison directe avec le prix BSM euro
 
 ### 3 · Simulation matricielle
 
-Heatmap croisée volatilité × prix sous-jacent — visualise l'impact combiné de Gamma et Vega sur le prix du call.
+Heatmap croisée volatilité × prix sous-jacent visualise l'impact combiné de Gamma et Vega sur le prix du call.
 
 <img width="1440" alt="Simulation" src="https://github.com/user-attachments/assets/b9099d90-6d76-47b0-b9b6-904ba023f67c"/>
 
@@ -76,7 +76,7 @@ Tracé IV vs Strike par inversion numérique de BSM (méthode de Brent) sur les 
 
 ### 5 · Surface IV 3D (Plotly)
 
-Surface de volatilité implicite interactive — axes Strike × Maturité × IV. Interpolation Griddata cubique, export HTML.
+Surface de volatilité implicite interactive  axes Strike × Maturité × IV. Interpolation Griddata cubique, export HTML.
 
 <img width="1440" alt="Surface IV 3D" src="https://github.com/user-attachments/assets/5387adeb-0db6-4213-917b-ad3700dd6651"/>
 
@@ -135,7 +135,7 @@ python main.py
 ```
 option_pricer/
 ├── main.py                       # Point d'entrée
-├── gui_app.py                    # Interface PyQt5 — 6 onglets
+├── gui_app.py                    # Interface PyQt5  6 onglets
 ├── option_models.py              # BSM, CRR, Grecs
 ├── exotic_options_models.py      # Barrières, Asiatiques, Lookback, Digitales
 ├── exotic_options_tab.py         # Onglet options exotiques
@@ -169,8 +169,8 @@ option_pricer/
 
 ## Licence
 
-MIT — voir [`LICENSE`](LICENSE).
+MIT  voir [`LICENSE`](LICENSE).
 
 ---
 
-*Dernière mise à jour : mars 2026 — ajout de l'onglet Options Exotiques et benchmark vs DerivaGem*
+*Dernière mise à jour : mars 2026  ajout de l'onglet Options Exotiques et benchmark vs DerivaGem*
