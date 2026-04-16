@@ -93,4 +93,4 @@ class DataCache:
 
 
 # Instance globale du cache (partagée entre tous les modules)
-global_cache = DataCache(ttl_seconds=3600)  # 1 heure par défaut
+global_cache = DataCache(ttl_seconds=1800)  # 1 heure par défaut

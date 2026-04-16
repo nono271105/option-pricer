@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit,
     QTabWidget, QDialog
 )
-from PyQt5.QtCore import QDate, QThread, pyqtSignal
+from PyQt5.QtCore import QDate
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -660,7 +660,7 @@ class OptionPricingApp(QWidget):
                 spl = make_interp_spline(X, Y, k=3)
                 Y_smooth = spl(X_smooth)
                 
-                # Tracé de la LIGNE CONTINUE (C'est ce que vous voulez !)
+                # Tracé de la LIGNE CONTINUE
                 ax.plot(X_smooth, Y_smooth, label='Sourire de Volatilité (Lissé)', color='blue', linewidth=2.5)
             except Exception as e_spline:
                 print(f"Erreur Spline: {e_spline}. Fallback sur un tracé linéaire.")

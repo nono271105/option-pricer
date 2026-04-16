@@ -246,7 +246,7 @@ class OptionModels:
 
         # Gamma (dérivée seconde par rapport à S)
         C_center = crr_price(S, sigma, r)
-        gamma = (C_plus - 2 * C_center + C_minus) / (epsilon**2)
+        gamma = (C_plus - 2 * C_center + C_minus) / (eps_S**2)
         
         # Theta (dérivée par rapport à T, en années)
         epsilon_t = 1e-4  # petit pas en années (indépendant d'epsilon qui concerne S)

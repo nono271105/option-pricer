@@ -6,9 +6,8 @@ Surface 3D : X = Strike, Y = Maturity, Z = Implied Volatility
 import numpy as np
 import pandas as pd
 from typing import Optional, Tuple, Dict
-from datetime import datetime, timedelta
+from datetime import datetime
 from scipy.interpolate import griddata
-import warnings
 
 from data_fetcher import DataFetcher
 from option_models import OptionModels
@@ -205,15 +204,29 @@ class ImpliedVolatilitySurface:
         )
         
         # Remplir les NaN avec nearest neighbor
-        mask = np.isnan(Z_mesh)
-        if mask.any():
-            Z_mesh[mask] = griddata(
+        mask_nan = np.isnan(Z_mesh)
+        if mask_nan.any():
+            Z_mesh[mask_nan] = griddata(
                 points,
                 values,
-                (X_mesh[mask], Y_mesh[mask]),
+                (X_mesh[mask_nan], Y_mesh[mask_nan]),
                 method='nearest'
             )
-        
+
+        # Remplacer les valeurs <= 0 par nearest neighbor
+        # Une IV négative ou nulle est impossible financièrement — elle résulte
+        # d'une extrapolation cubique en dehors de la convexe des données.
+        # On corrige par le point de données réel le plus proche plutôt que
+        # de laisser un trou ou une valeur aberrante dans la surface.
+        mask_invalid = Z_mesh <= 0
+        if mask_invalid.any():
+            Z_mesh[mask_invalid] = griddata(
+                points,
+                values,
+                (X_mesh[mask_invalid], Y_mesh[mask_invalid]),
+                method='nearest'
+            )
+
         return X_mesh, Y_mesh, Z_mesh
     
     def get_surface_for_ticker(

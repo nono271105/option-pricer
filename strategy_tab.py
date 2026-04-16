@@ -18,7 +18,6 @@ from __future__ import annotations
 import numpy as np
 from typing import Optional, List, Dict
 from datetime import date, datetime
-from concurrent.futures import ThreadPoolExecutor
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
@@ -28,7 +27,7 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QDate
-from PyQt5.QtGui import QDoubleValidator, QColor
+from PyQt5.QtGui import QColor
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure

@@ -11,7 +11,6 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QThread, pyqtSignal, QUrl
 from PyQt5.QtGui import QDoubleValidator
 import plotly.graph_objects as go
-import plotly.io as pio
 import numpy as np
 from datetime import datetime
 
