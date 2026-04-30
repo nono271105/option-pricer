@@ -122,7 +122,7 @@ Construction et analyse de stratégies options multi-legs avec données de march
 Prévision des prix sous-jacents via le modèle de fondation **Google TimesFM (2.5-200M)**.
 Repricing BSM au jour le jour sur l'horizon de forecast (jusqu'à 63 jours) et projection de l'évolution du prix de l'option et du Delta (Delta Forecast). Exécution asynchrone (QThread) 100% compatible CPU avec historique raccordé en temps réel.
 
-<!-- ici le screenshot de l'onglet Forecast TimesFM -->
+<img width="1440" height="900" alt="Forecast" src="https://github.com/user-attachments/assets/9802dd73-17d2-4973-9360-f03a3dc6f5b3" />
 
 ---
 
