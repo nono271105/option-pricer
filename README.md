@@ -7,6 +7,10 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT"></a>
   <img src="https://img.shields.io/badge/status-Active-brightgreen.svg" alt="Active">
+  <br>
+  <img src="https://img.shields.io/badge/PyQt5-41CD52?logo=Qt&logoColor=white" alt="PyQt5">
+  <img src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?logo=PyTorch&logoColor=white" alt="PyTorch">
+  <img src="https://img.shields.io/badge/Plotly-%233F4F75.svg?logo=plotly&logoColor=white" alt="Plotly">
 </p>
 
 <p align="center">
@@ -20,27 +24,29 @@
 
 ### Modèles de pricing
 
-| Modèle | Type | Méthode |
-|--------|------|---------|
-| **Black-Scholes-Merton** | Européenne | Formule fermée |
-| **Cox-Ross-Rubinstein** | Américaine | Arbre binomial |
-| **Barrières** (8 types) | Exotique | Rubinstein & Reiner (1991) + Monte Carlo |
-| **Asiatique** (moyenne) | Exotique | Monte Carlo |
-| **Lookback** | Exotique | Monte Carlo |
-| **Digitale / Cash-or-Nothing** | Exotique | BSM fermée + Monte Carlo |
+| Modèle                              | Type        | Méthode                                 |
+| ------------------------------------ | ----------- | ---------------------------------------- |
+| **Black-Scholes-Merton**       | Européenne | Formule fermée                          |
+| **Cox-Ross-Rubinstein**        | Américaine | Arbre binomial                           |
+| **Barrières** (8 types)       | Exotique    | Rubinstein & Reiner (1991) + Monte Carlo |
+| **Asiatique** (moyenne)        | Exotique    | Monte Carlo                              |
+| **Lookback**                   | Exotique    | Monte Carlo                              |
+| **Digitale / Cash-or-Nothing** | Exotique    | BSM fermée + Monte Carlo                |
 
 ### Données de marché en temps réel
+
 - **Prix spot** via Yahoo Finance (`yfinance`)
 - **Taux sans risque SOFR** depuis l'API FRED
 - **Dividendes** et **volatilité implicite** extraits automatiquement depuis les chaînes d'options
 - Cache TTL thread-safe pour limiter les appels API
 
 ### Grecs
+
 Delta (Δ), Gamma (Γ), Theta (Θ/jour), Vega (ν), Rho (ρ), calculés analytiquement (BSM) ou par différences finies (CRR)
 
 ---
 
-## Interface 7 onglets
+## Interface 8 onglets
 
 ### 1 · Calculateur BSM
 
@@ -58,7 +64,7 @@ Pricing américain par arbre binomial. Comparaison directe avec le prix BSM euro
 
 ---
 
-### 3 · Simulation matricielle
+### 3 · Simulation
 
 Heatmap croisée volatilité × prix sous-jacent visualise l'impact combiné de Gamma et Vega sur le prix du call.
 
@@ -75,7 +81,7 @@ Interpolation spline cubique.
 
 ---
 
-### 5 · Surface IV 3D (Plotly)
+### 5 · Surface IV 3D
 
 Surface de volatilité implicite interactive axes Strike × Maturité × IV.
 Interpolation Griddata cubique, export HTML.
@@ -98,6 +104,7 @@ Trajectoires GBM simulées, distribution des payoffs et profil à maturité.
 Construction et analyse de stratégies options multi-legs avec données de marché en temps réel.
 
 **22 stratégies disponibles en 5 familles**
+
 - Positions de base : Long/Short Call, Long/Short Put
 - Spreads directionnels : Bull/Bear Call Spread, Bull/Bear Put Spread
 - Volatilité : Long/Short Straddle, Long/Short Strangle
@@ -107,6 +114,15 @@ Construction et analyse de stratégies options multi-legs avec données de march
 **Métriques calculées automatiquement** : coût total, breakevens, gain maximum, perte maximum et grecs agrégés BSM (Δ, Γ, Θ, ν, ρ) de tous les legs.
 
 <img width="1440" height="900" alt="Stratégies" src="https://github.com/user-attachments/assets/c0396c3a-7c3c-4074-9223-34216933df86" />
+
+---
+
+### 8 · Forecast TimesFM (IA)
+
+Prévision des prix sous-jacents via le modèle de fondation **Google TimesFM (2.5-200M)**.
+Repricing BSM au jour le jour sur l'horizon de forecast (jusqu'à 63 jours) et projection de l'évolution du prix de l'option et du Delta (Delta Forecast). Exécution asynchrone (QThread) 100% compatible CPU avec historique raccordé en temps réel.
+
+<!-- ici le screenshot de l'onglet Forecast TimesFM -->
 
 ---
 
@@ -137,6 +153,8 @@ venv\Scripts\activate           # Windows
 
 # 3. Dépendances
 pip install -r requirements.txt
+# (Optionnel) Pour utiliser l'onglet Forecast IA :
+# pip install -r requirements_timesfm.txt
 
 # 4. Variables d'environnement
 FRED_API_KEY=VOTRE-CLÉ        # Créer un fichier .env et insérer votre clé API
@@ -161,6 +179,7 @@ option_pricer/
 ├── exotic_options_tab.py         # Onglet options exotiques
 ├── strategy_manager.py           # Moteur de calcul des stratégies
 ├── strategy_tab.py               # Onglet stratégies
+├── forecast_tab.py               # Onglet Forecast IA (TimesFM)
 ├── data_fetcher.py               # yfinance + FRED API + cache TTL
 ├── simulation_tab.py             # Heatmap simulation
 ├── volatility_smile_tab.py       # Smile de volatilité
@@ -168,23 +187,25 @@ option_pricer/
 ├── implied_volatility_surface.py # Calcul surface IV
 ├── cache.py                      # Cache TTL thread-safe
 ├── requirements.txt
+├── requirements_timesfm.txt      # Dépendances IA (Google TimesFM)
 └── README.md
 ```
 
 ## Dépendances principales
 
-| Package | Usage |
-|---------|------------|
-| `PyQt5` | Interface graphique |
-| `PyQtWebEngine` | Rendu Plotly |
-| `yfinance` | Prix, IV, chaînes d'options |
-| `matplotlib` | Graphiques 2D |
-| `plotly` | Surface IV 3D interactive |
-| `scipy` | CDF normale, interpolation, optimisation |
-| `numpy` | Calcul numérique |
-| `pandas` | Manipulation de données |
-| `requests` | API FRED |
-| `python-dotenv` | Variables d'environnement |
+| Package                 | Usage                                     |
+| ----------------------- | ----------------------------------------- |
+| `PyQt5`               | Interface graphique                       |
+| `PyQtWebEngine`       | Rendu Plotly                              |
+| `yfinance`            | Prix, IV, chaînes d'options              |
+| `matplotlib`          | Graphiques 2D                             |
+| `plotly`              | Surface IV 3D interactive                 |
+| `scipy`               | CDF normale, interpolation, optimisation  |
+| `numpy`               | Calcul numérique                         |
+| `pandas`              | Manipulation de données                  |
+| `requests`            | API FRED                                  |
+| `python-dotenv`       | Variables d'environnement                 |
+| `timesfm` / `torch` | Modèle de prévision IA (Google TimesFM) |
 
 ---
 
@@ -194,4 +215,4 @@ MIT voir [`LICENSE`](LICENSE).
 
 ---
 
-*Dernière mise à jour : mars 2026 ajout de l'onglet Stratégies (v2.1)*
+*Dernière mise à jour : avril 2026 ajout de l'onglet Forecast IA TimesFM (v2.2)*

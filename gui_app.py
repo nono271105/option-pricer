@@ -22,6 +22,7 @@ from volatility_smile_tab import VolatilitySmileTab
 from volatility_surface_tab import VolatilitySurfaceTab
 from exotic_options_tab import ExoticOptionsTab
 from strategy_tab import StrategyTab
+from forecast_tab import ForecastTimesFMTab
 
 class PlottingDialog(QDialog):
     """
@@ -279,25 +280,28 @@ class OptionPricingApp(QWidget):
         option_calculator_layout.addLayout(display_panel_layout, 2)
 
         # Ajout des onglets dans l'ordre: BSM, CRR, Simulation, Smile
-        self.tab_widget.addTab(option_calculator_widget, "Modèle BSM (Européen)")
+        self.tab_widget.addTab(option_calculator_widget, "Modèle BSM")
 
         self.crr_tab = CRRModelTab(self)
-        self.tab_widget.addTab(self.crr_tab, "Modèle CRR (Américain)")
+        self.tab_widget.addTab(self.crr_tab, "Modèle CRR")
 
         self.simulation_tab = CallPriceSimulationTab()
-        self.tab_widget.addTab(self.simulation_tab, "Simulation Call Price")
+        self.tab_widget.addTab(self.simulation_tab, "Simulation")
 
         self.smile_tab = VolatilitySmileTab()
         self.tab_widget.addTab(self.smile_tab, "Smile de Volatilité")
 
         self.surface_tab = VolatilitySurfaceTab()
-        self.tab_widget.addTab(self.surface_tab, "Surface IV (3D Plotly)")
+        self.tab_widget.addTab(self.surface_tab, "Surface IV")
 
         self.exotic_tab = ExoticOptionsTab(self)
-        self.tab_widget.addTab(self.exotic_tab, "Options Exotiques")
+        self.tab_widget.addTab(self.exotic_tab, "Exotiques")
 
         self.strategy_tab = StrategyTab(self)
         self.tab_widget.addTab(self.strategy_tab, "Stratégies")
+
+        self.forecast_tab = ForecastTimesFMTab()
+        self.tab_widget.addTab(self.forecast_tab, "Forecast TimesFM")
 
         main_window_layout = QVBoxLayout()
         main_window_layout.addWidget(self.tab_widget)
@@ -401,6 +405,12 @@ class OptionPricingApp(QWidget):
             self.current_ticker, self.S, self.r, self.q,
             sigma_to_use, pricing_method_to_use
         )
+
+        # 7. Onglet Forecast TimesFM
+        if hasattr(self, 'forecast_tab'):
+            self.forecast_tab.update_financial_params(
+                self.current_ticker, self.S, self.r, self.q, sigma_to_use
+            )
         
 
     def calculate_option_metrics(self):
@@ -888,6 +898,12 @@ class OptionPricingApp(QWidget):
                 self.strategy_tab.update_financial_data(
                     self.current_ticker, self.S, self.r, self.q,
                     sigma_to_use, pricing_method_to_use
+                )
+
+            elif index == self.tab_widget.indexOf(getattr(self, 'forecast_tab', None)):
+                self.forecast_tab.update_financial_params(
+                    self.current_ticker, self.S, self.r, self.q,
+                    sigma_to_use
                 )
             
         else:

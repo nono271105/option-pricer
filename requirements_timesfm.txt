@@ -1,0 +1,13 @@
+# Dépendances supplémentaires pour l'onglet Forecast TimesFM
+# 
+# 1. Installer torch en premier (CPU only) :
+#    pip install torch --index-url https://download.pytorch.org/whl/cpu
+#
+# 2. Installer timesfm depuis GitHub (pas disponible sur PyPI en v2.5) :
+#    pip install git+https://github.com/google-research/timesfm.git
+#
+# 3. Installer huggingface_hub :
+#    pip install huggingface_hub
+
+torch
+huggingface_hub>=0.20.0
