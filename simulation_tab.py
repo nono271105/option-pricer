@@ -10,11 +10,12 @@ from PyQt5.QtCore import QDate, Qt
 from datetime import date
 
 from option_models import OptionModels
-
+from simulation_logic import SimulationLogic
 class CallPriceSimulationTab(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.option_models: OptionModels = OptionModels()
+        self.simulation_logic = SimulationLogic(self.option_models)
 
         self.ticker_symbol: str = "N/A"
         self.S_current: Optional[float] = None
@@ -175,24 +176,15 @@ class CallPriceSimulationTab(QWidget):
                 QMessageBox.warning(self, "Erreur de Strike", "Le prix d'exercice doit être supérieur à 0.")
                 return
 
-            volatilities_percent = np.arange(vol_min, vol_max + vol_step, vol_step)
-            underlying_prices = np.arange(underlying_min, underlying_max + underlying_step, underlying_step)
+            volatilities_percent, underlying_prices, results_matrix, all_prices = self.simulation_logic.run_simulation(
+                K, T, self.r_current, self.q_current, 
+                vol_min, vol_max, vol_step,
+                underlying_min, underlying_max, underlying_step
+            )
 
             if len(volatilities_percent) == 0 or len(underlying_prices) == 0:
                 QMessageBox.warning(self, "Plages Vides", "Les plages de volatilité ou de prix sous-jacent générées sont vides. Ajustez les pas ou vérifiez les bornes calculées.")
                 return
-
-            all_prices = []
-            results_matrix = np.zeros((len(volatilities_percent), len(underlying_prices)))
-
-            for i, vol_percent in enumerate(volatilities_percent):
-                sigma = vol_percent / 100.0
-                for j, S in enumerate(underlying_prices):
-                    price = self.option_models.black_scholes_price(
-                        S=float(S), K=K, T=T, r=self.r_current, sigma=sigma, q=self.q_current, option_type='call'
-                    )
-                    results_matrix[i, j] = price
-                    all_prices.append(price)
 
             if not all_prices:
                 QMessageBox.warning(self, "Aucun Résultat", "Aucun prix de Call n'a pu être calculé pour la simulation.")

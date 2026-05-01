@@ -12,11 +12,10 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from datetime import datetime, date
 from scipy.interpolate import interp1d
-from scipy.optimize import brentq
 import pandas as pd
 
 from data_fetcher import DataFetcher
-from option_models import OptionModels
+from volatility_smile_logic import VolatilitySmileLogic
 
 
 class VolatilitySmileTab(QWidget):
@@ -28,7 +27,7 @@ class VolatilitySmileTab(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.data_fetcher: DataFetcher = DataFetcher()
-        self.option_models: OptionModels = OptionModels()
+        self.smile_logic: VolatilitySmileLogic = VolatilitySmileLogic()
         self.current_S: Optional[float] = None
         self.current_r: float = 0.05
         self.current_q: float = 0.0
@@ -81,39 +80,6 @@ class VolatilitySmileTab(QWidget):
         self.current_r = r if r is not None else 0.05
         self.current_q = q if q is not None else 0.0
 
-    def calculate_iv_from_price(self, market_price, S, K, T, r, q, option_type):
-        """
-        Inverse le modèle Black-Scholes pour trouver la volatilité implicite.
-        Utilise la méthode de Brent (brentq) pour résoudre : BS_price(sigma) - market_price = 0
-        """
-        if market_price <= 0 or T <= 0 or S <= 0 or K <= 0:
-            return None
-        
-        # Valeur intrinsèque
-        if option_type == 'call':
-            intrinsic = max(0, S - K)
-        else:
-            intrinsic = max(0, K - S)
-        
-        # Le prix du marché doit être >= valeur intrinsèque
-        if market_price < intrinsic:
-            return None
-
-        def objective(sigma):
-            try:
-                bs_price = self.option_models.black_scholes_price(
-                    S, K, T, r, sigma, q, option_type
-                )
-                return bs_price - market_price
-            except:
-                return 1e10  # Valeur arbitraire en cas d'erreur
-
-        try:
-            # Recherche de sigma entre 0.01 (1%) et 3.0 (300%)
-            iv = brentq(objective, 0.01, 3.0, xtol=1e-6, maxiter=100)
-            return iv
-        except:
-            return None
 
     def plot_volatility_smile(self):
         ticker = self.ticker_input.text().upper().strip()
@@ -153,91 +119,13 @@ class VolatilitySmileTab(QWidget):
                 QMessageBox.warning(self, "Maturité", "La date d'échéance est dans le passé.")
                 return
 
-            # 5. Séparation Calls et Puts
-            calls = opt_chain.calls.copy()
-            puts = opt_chain.puts.copy()
+            strikes_interp, ivs_interp, smile_df = self.smile_logic.process_smile_data(
+                opt_chain, current_price, T, self.current_r, self.current_q
+            )
 
-            # Calcul du prix Mid (Bid + Ask) / 2
-            calls['mid_price'] = (calls['bid'] + calls['ask']) / 2
-            puts['mid_price'] = (puts['bid'] + puts['ask']) / 2
-
-            # Nettoyage : on garde seulement les options avec un prix > 0
-            calls = calls[(calls['mid_price'] > 0) & (calls['bid'] > 0) & (calls['ask'] > 0)]
-            puts = puts[(puts['mid_price'] > 0) & (puts['bid'] > 0) & (puts['ask'] > 0)]
-
-            # 6. FILTRAGE OTM
-            # Puts OTM : Strike < Prix Actuel (gauche du smile)
-            puts_otm = puts[puts['strike'] < current_price].copy()
-            
-            # Calls OTM : Strike >= Prix Actuel (droite du smile)
-            calls_otm = calls[calls['strike'] >= current_price].copy()
-
-            if puts_otm.empty and calls_otm.empty:
-                QMessageBox.warning(self, "Données", "Aucune option OTM trouvée.")
+            if strikes_interp is None or ivs_interp is None:
+                QMessageBox.warning(self, "Calcul IV", "Impossible de calculer le smile de volatilité pour les options disponibles.")
                 return
-
-            # 7. CALCUL DE L'IV PAR INVERSION DE BSM
-            iv_data = []
-
-            # Pour les Puts OTM
-            for _, row in puts_otm.iterrows():
-                K = row['strike']
-                market_price = row['mid_price']
-                
-                iv = self.calculate_iv_from_price(
-                    market_price, current_price, K, T, 
-                    self.current_r, self.current_q, 'put'
-                )
-                
-                if iv is not None and 0.01 < iv < 3.0:  # Filtrage IV raisonnable
-                    iv_data.append({
-                        'strike': K,
-                        'iv': iv,
-                        'type': 'put'
-                    })
-
-            # Pour les Calls OTM
-            for _, row in calls_otm.iterrows():
-                K = row['strike']
-                market_price = row['mid_price']
-                
-                iv = self.calculate_iv_from_price(
-                    market_price, current_price, K, T,
-                    self.current_r, self.current_q, 'call'
-                )
-                
-                if iv is not None and 0.01 < iv < 3.0:
-                    iv_data.append({
-                        'strike': K,
-                        'iv': iv,
-                        'type': 'call'
-                    })
-
-            if not iv_data:
-                QMessageBox.warning(self, "Calcul IV", "Impossible de calculer l'IV pour les options disponibles.")
-                return
-
-            # 8. Création du DataFrame et tri
-            smile_df = pd.DataFrame(iv_data)
-            smile_df = smile_df.sort_values('strike')
-            smile_df = smile_df.drop_duplicates(subset=['strike'])  # Suppression des duplicates
-
-            if len(smile_df) < 2:
-                QMessageBox.warning(self, "Données", "Pas assez de points pour tracer le smile.")
-                return
-
-            # 9. INTERPOLATION LINÉAIRE pour les strikes manquants
-            strikes = smile_df['strike'].values
-            ivs = smile_df['iv'].values * 100  # Conversion en %
-
-            # Création d'un axe de strikes plus dense
-            strike_min = strikes.min()
-            strike_max = strikes.max()
-            strikes_interp = np.linspace(strike_min, strike_max, 200)
-
-            # Interpolation linéaire
-            f_interp = interp1d(strikes, ivs, kind='linear', fill_value='extrapolate')
-            ivs_interp = f_interp(strikes_interp)
 
             # 10. TRACÉ
             self.ax.clear()
@@ -262,7 +150,7 @@ class VolatilitySmileTab(QWidget):
             self.ax.legend(loc='best')
             
             # Zoom intelligent sur Y
-            y_min, y_max = ivs.min(), ivs.max()
+            y_min, y_max = ivs_interp.min(), ivs_interp.max()
             margin = (y_max - y_min) * 0.1
             self.ax.set_ylim(max(0, y_min - margin), y_max + margin)
 

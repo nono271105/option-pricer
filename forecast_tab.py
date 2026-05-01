@@ -22,7 +22,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from option_models import OptionModels
-
+from forecast_logic import ForecastLogic
 
 # ---------------------------------------------------------------------------
 # Worker QThread — exécute le forecast TimesFM en arrière-plan
@@ -43,60 +43,18 @@ class ForecastWorker(QThread):
     finished = pyqtSignal(object, object, object)
     error = pyqtSignal(str)
 
-    def __init__(self, ticker: str, horizon: int, parent=None):
+    def __init__(self, ticker: str, horizon: int, forecast_logic: ForecastLogic, parent=None):
         super().__init__(parent)
         self.ticker = ticker
         self.horizon = horizon
+        self.forecast_logic = forecast_logic
 
     def run(self):
         try:
-            # --- Import lourd DANS le thread ---
-            import yfinance as yf
-            import timesfm
-
-            # 1. Récupérer 1 an d'historique
-            tk = yf.Ticker(self.ticker)
-            hist = tk.history(period="1y")
-            if hist.empty or len(hist) < 30:
-                self.error.emit(
-                    f"Historique insuffisant pour {self.ticker} "
-                    f"({len(hist)} points). Minimum requis : 30."
-                )
-                return
-
-            prices = hist["Close"].values.astype(np.float32)
-
-            # 2. Charger le modèle TimesFM 2.5 (CPU only)
-            #    torch_compile=False est OBLIGATOIRE sur CPU (sinon erreur Triton/GPU)
-            model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
-                "google/timesfm-2.5-200m-pytorch",
-                torch_compile=False,
+            point_forecast, quantile_forecast, prices = self.forecast_logic.run_forecast(
+                self.ticker, self.horizon
             )
-
-            # 3. Configurer le forecast puis inférence
-            model.compile(
-                timesfm.ForecastConfig(
-                    max_context=1024,
-                    max_horizon=self.horizon,
-                    normalize_inputs=True,
-                    use_continuous_quantile_head=True,
-                    fix_quantile_crossing=True,
-                )
-            )
-
-            point_forecast, quantile_forecast = model.forecast(
-                horizon=self.horizon,
-                inputs=[prices],
-            )
-            # point_forecast  : list[np.ndarray] → shape (1, horizon)
-            # quantile_forecast : list[np.ndarray] → shape (1, horizon, 10)
-
-            self.finished.emit(
-                np.array(point_forecast),
-                np.array(quantile_forecast),
-                prices,
-            )
-
+            self.finished.emit(point_forecast, quantile_forecast, prices)
         except Exception as exc:
             self.error.emit(str(exc))
 
@@ -120,6 +78,7 @@ class ForecastTimesFMTab(QWidget):
         super().__init__(parent)
 
         self.option_models = OptionModels()
+        self.forecast_logic = ForecastLogic(self.option_models)
 
         # Paramètres financiers synchronisés depuis l'app principale
         self.ticker_symbol: str = "AAPL"
@@ -276,7 +235,7 @@ class ForecastTimesFMTab(QWidget):
         self._set_status("Chargement du modèle TimesFM…", "orange")
 
         # Lancer le worker
-        self._worker = ForecastWorker(ticker, horizon)
+        self._worker = ForecastWorker(ticker, horizon, self.forecast_logic)
         self._worker.finished.connect(
             lambda pf, qf, hist: self._on_forecast_done(pf, qf, hist, K, T_total, horizon)
         )
@@ -300,51 +259,14 @@ class ForecastTimesFMTab(QWidget):
             q10 = qf[:, 0]    # quantile 10 %
             q90 = qf[:, -1]   # quantile 90 %
 
-            # Dernier prix historique connu
-            last_price = float(history_prices[-1])
-
-            # --- Repricing BSM jour par jour ---
-            option_prices = []
-            deltas = []
-            for i in range(horizon):
-                S_i = float(pf[i])
-                T_i = max(T_total - (i + 1) / 365.0, 1.0 / 365.0)
-
-                price_i = self.option_models.black_scholes_price(
-                    S_i, K, T_i, self.r, self.sigma, self.q, option_type
+            # --- Repricing BSM jour par jour via la logique métier ---
+            pf, option_prices, deltas, hist_slice, hist_option_prices, hist_deltas, x_hist = \
+                self.forecast_logic.process_forecast_results(
+                    point_forecast, history_prices, horizon, K, T_total, 
+                    self.r, self.sigma, self.q, option_type
                 )
-                greeks_i = self.option_models.calculate_greeks(
-                    S_i, K, T_i, self.r, self.sigma, self.q, option_type
-                )
-                option_prices.append(price_i)
-                deltas.append(greeks_i.get("delta", 0.0))
-
-            option_prices = np.array(option_prices)
-            deltas = np.array(deltas)
-
-            # --- Calcul historique (30 derniers jours) pour l'option et le delta ---
-            n_hist_display = min(30, len(history_prices))
-            hist_slice = history_prices[-n_hist_display:]
-            x_hist = np.arange(-n_hist_display, 0)
+            
             x_fc = np.arange(0, horizon)
-
-            hist_option_prices = []
-            hist_deltas = []
-            for i, days_offset in enumerate(x_hist):
-                S_hist = float(hist_slice[i])
-                # days_offset est négatif, donc T_hist = T_total + (jours passés)
-                T_hist = max(T_total - days_offset / 365.0, 1.0 / 365.0)
-                price_h = self.option_models.black_scholes_price(
-                    S_hist, K, T_hist, self.r, self.sigma, self.q, option_type
-                )
-                greeks_h = self.option_models.calculate_greeks(
-                    S_hist, K, T_hist, self.r, self.sigma, self.q, option_type
-                )
-                hist_option_prices.append(price_h)
-                hist_deltas.append(greeks_h.get("delta", 0.0))
-
-            hist_option_prices = np.array(hist_option_prices)
-            hist_deltas = np.array(hist_deltas)
 
             # --- Tracé des 3 subplots ---
             self.fig.clear()

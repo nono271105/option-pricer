@@ -1,6 +1,5 @@
 import math
 import numpy as np
-import matplotlib.pyplot as plt
 from typing import Literal, Optional, List, Dict, Any
 from datetime import datetime
 
@@ -161,7 +160,7 @@ class StrategyManager:
 
             # Récupération de la prime : yfinance d'abord, fallback BSM
             premium = self._get_premium(
-                ticker, strike, T, r, sigma, q,
+                ticker, S, strike, T, r, sigma, q,
                 leg_def["type"], maturity_datetime,
                 data_fetcher, option_models
             )
@@ -175,7 +174,7 @@ class StrategyManager:
 
         return legs
 
-    def _get_premium(self, ticker: str, strike: float, T: float,
+    def _get_premium(self, ticker: str, S_current: float, strike: float, T: float,
                      r: float, sigma: float, q: float,
                      option_type: str, maturity_datetime: datetime,
                      data_fetcher, option_models) -> float:
@@ -191,10 +190,10 @@ class StrategyManager:
         except Exception:
             pass
 
-        # Fallback BSM
-        return option_models.black_scholes_price(S=strike, K=strike, T=T,
-                                                  r=r, sigma=sigma, q=q,
-                                                  option_type=option_type)
+        # Fallback BSM — use the current spot price, not the strike
+        return option_models.black_scholes_price(S=S_current, K=strike, T=T,
+                              r=r, sigma=sigma, q=q,
+                              option_type=option_type)
 
     # =========================================================================
     # Calcul du payoff à maturité
@@ -345,33 +344,3 @@ class StrategyManager:
         else:
             raise ValueError("position doit être 'long' ou 'short'")
         return net_payoff
-
-    def plot_payoff(
-        self, 
-        K: float, 
-        premium: float, 
-        option_type: Literal['call', 'put'], 
-        position: Literal['long', 'short'], 
-        title: str = "", 
-        ax: Optional[object] = None
-    ) -> None:
-        """
-        Trace le payoff à maturité pour une seule option.
-        """
-        S_min = max(0, K * 0.7)
-        S_max = K * 1.3
-        S_range = np.linspace(S_min, S_max, 200)
-
-        payoff = self.calculate_single_option_payoff(S_range, K, premium, option_type, position)
-
-        if ax is None:
-            fig, ax = plt.subplots(figsize=(10, 6))
-
-        ax.plot(S_range, payoff, label=f'{position.capitalize()} {option_type.capitalize()} (K={K})')
-        ax.axhline(0, color='grey', linestyle='--', linewidth=0.8)
-        ax.axvline(K, color='grey', linestyle=':', linewidth=0.8, label=f'Strike K={K}')
-        ax.set_xlabel("Prix de l'actif sous-jacent à l'échéance (S)")
-        ax.set_ylabel("Profit/Perte")
-        ax.set_title(title or f"Payoff - {position.capitalize()} {option_type.capitalize()} (K={K}, Premium={premium:.2f})")
-        ax.grid(True)
-        ax.legend()

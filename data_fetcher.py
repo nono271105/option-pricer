@@ -121,17 +121,52 @@ class DataFetcher:
         try:
             ticker = yf.Ticker(ticker_symbol)
             info = ticker.info
+
+            # 1) Preferer trailingAnnualDividendYield (déjà en décimal si présent)
+            tr_yield = info.get("trailingAnnualDividendYield")
+            if tr_yield is not None:
+                try:
+                    val = float(tr_yield)
+                    if 0 <= val < 1.0:
+                        global_cache.set(cache_key, val)
+                        return val
+                except Exception:
+                    pass
+
+            # 2) Si absent, tenter de calculer via trailingAnnualDividendRate / prix
+            tr_rate = info.get("trailingAnnualDividendRate") or info.get("dividendRate")
+            price = info.get("previousClose") or info.get("regularMarketPrice") or self.get_live_price(ticker_symbol)
+            if tr_rate is not None and price is not None:
+                try:
+                    price_f = float(price)
+                    if price_f > 0:
+                        yield_calc = float(tr_rate) / price_f
+                        if 0 <= yield_calc < 1.0:
+                            global_cache.set(cache_key, yield_calc)
+                            return yield_calc
+                except Exception:
+                    pass
+
+            # 3) Dernière chance : utiliser info['dividendYield'] mais corriger les formats aberrants
             dividend_yield = info.get("dividendYield")
-            
             if dividend_yield is not None:
-                div_decimal = float(dividend_yield) / 100.0
-                # Stocker dans le cache
-                global_cache.set(cache_key, div_decimal)
-                return div_decimal
-            else:
-                # Stocker 0.0 aussi dans le cache pour éviter des requêtes répétées
-                global_cache.set(cache_key, 0.0)
-                return 0.0
+                try:
+                    div_decimal = float(dividend_yield)
+                    # Si la valeur semble être un pourcentage mal formaté (ex: 38 ou 0.38),
+                    # essayer de la normaliser en décimal (ex: 0.38 -> 0.0038)
+                    if div_decimal > 1.0:
+                        div_decimal = div_decimal / 100.0
+                    # Cas particulier observé (0.38 signifiant 38%)
+                    if div_decimal > 0.2:
+                        div_decimal = div_decimal / 100.0
+                    global_cache.set(cache_key, div_decimal)
+                    return div_decimal
+                except Exception:
+                    pass
+
+            # Stocker 0.0 aussi dans le cache pour éviter des requêtes répétées
+            global_cache.set(cache_key, 0.0)
+            return 0.0
         except Exception as e:
             print(f"Erreur lors de la récupération du rendement de dividende pour {ticker_symbol}: {e}")
             return 0.0
@@ -225,44 +260,3 @@ class DataFetcher:
             return None, None, closest_date
             
         return iv, price, closest_date
-
-    # Récupération des données pour le Sourire de Volatilité 
-    def get_volatility_smile_data(
-        self, 
-        ticker_symbol: str, 
-        maturity_datetime: datetime
-    ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-        """
-        Récupère les Strikes et IV pour les Calls et Puts d'une expiration donnée.
-        
-        Args:
-            ticker_symbol: Symbole du titre
-            maturity_datetime: Date d'expiration
-            
-        Returns:
-            Tuple[Optional[DataFrame], Optional[str]]: (DataFrame avec ['strike', 'impliedVolatility', 'type'], date_expiration)
-        """
-        opt_chain, closest_date = self.get_option_data_chain(ticker_symbol, maturity_datetime)
-
-        if opt_chain is None or closest_date is None:
-            return None, None
-
-        # Nettoyage et combinaison des données Call et Put pour le tracé du sourire
-        calls_df = opt_chain.calls[['strike', 'impliedVolatility', 'lastPrice']].dropna()
-        puts_df = opt_chain.puts[['strike', 'impliedVolatility', 'lastPrice']].dropna()
-
-        # Filtrer les IVs non significatives ou nulles
-        calls_df = calls_df[calls_df['impliedVolatility'] > 1e-6]
-        puts_df = puts_df[puts_df['impliedVolatility'] > 1e-6]
-        
-        # Ajouter une colonne 'type' pour distinguer les points
-        calls_df['type'] = 'call'
-        puts_df['type'] = 'put'
-
-        # Correction de l'erreur 'append' en utilisant pd.concat
-        combined_df = pd.concat([
-            calls_df[['strike', 'impliedVolatility', 'type']],
-            puts_df[['strike', 'impliedVolatility', 'type']]
-        ]).drop_duplicates(subset=['strike', 'impliedVolatility']).reset_index(drop=True)
-        
-        return combined_df, closest_date

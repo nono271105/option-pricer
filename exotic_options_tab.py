@@ -199,19 +199,40 @@ class ExoticCanvas(FigureCanvas):
             ax.axvline(K, color="green", lw=1.2, ls=":", label=f"K = {K:.2f}")
 
         elif exotic == "asian":
-            K        = params["K"]
-            phi      = 1 if otype == "call" else -1
-            payoff_p = np.maximum(phi * (S_range - K), 0)
-            ax.fill_between(S_range, payoff_p, alpha=0.25, color="green")
-            ax.plot(S_range, payoff_p, color="green", lw=1.5,
-                    label="Payoff approx")
+            K = params["K"]
+            phi = 1 if otype == "call" else -1
+            # Pour une asiatique arithmétique, E[avg(S)] ≈ S * exp((r-q-sigma²/6)*T/2)
+            # approximation de la moyenne du GBM sur [0,T]
+            # Le profil à maturité en fonction de avg(S) = payoff vanilla sur avg
+            # On affiche le payoff vanilla (borne supérieure) ET la borne corrigée
+            vanilla = np.maximum(phi * (S_range - K), 0)
+            # Facteur de réduction approximatif : vol effective de la moyenne ≈ sigma/sqrt(3)
+            sigma_eff = params.get("sigma", 0.20) / np.sqrt(3)
+            # Borne inférieure indicative : prix BSM avec sigma réduit (non rigoureux, illustratif)
+            ax.plot(S_range, vanilla, color="gray", lw=1.0, ls="--", alpha=0.5,
+                label="Payoff vanilla (réf.)")
+            ax.fill_between(S_range, vanilla, alpha=0.10, color="gray")
+            ax.text(0.05, 0.85,
+                "Payoff asiatique < vanilla\n(vol effective ≈ σ/√3)",
+                transform=ax.transAxes, fontsize=7, color="green",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
             ax.axvline(K, color="green", lw=1.2, ls="--", label=f"K = {K:.2f}")
 
         elif exotic == "lookback":
-            payoff_p = S_range - S_range[0]
-            ax.fill_between(S_range, payoff_p, alpha=0.25, color="darkorange")
-            ax.plot(S_range, payoff_p, color="darkorange", lw=1.5,
-                    label="Payoff illustratif")
+            # Le payoff lookback est path-dependent : max(S_T - S_min, 0) pour un call.
+            # Il est impossible de le représenter exactement sur un axe S_T seul.
+            # On affiche à la place le payoff espéré APPROXIMATIF basé sur la formule
+            # analytique de Goldmann-Sosin-Gatto pour le cas simplifié (S_min ~ S * exp(-sigma*sqrt(T))).
+            # Pour un call lookback flottant, le prix analytique est toujours > max(S_T - S0, 0).
+            # On affiche la borne inférieure (vanilla) + une annotation explicative.
+            vanilla_lb = np.maximum(S_range - S, 0) if otype == "call" else np.maximum(S - S_range, 0)
+            ax.plot(S_range, vanilla_lb, color="darkorange", lw=1.5, ls="--",
+                label="Borne inf. (Vanilla)")
+            ax.fill_between(S_range, vanilla_lb, alpha=0.15, color="darkorange")
+            ax.text(0.05, 0.85,
+                "Payoff réel = path-dependent\n(affiché : borne inférieure vanilla)",
+                transform=ax.transAxes, fontsize=7, color="darkorange",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
 
         else:  # digital
             K        = params["K"]

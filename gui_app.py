@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit,
     QTabWidget, QDialog
 )
-from PyQt5.QtCore import QDate
+from PyQt5.QtCore import QDate, QThread, pyqtSignal
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -162,6 +162,32 @@ class CRRModelTab(QWidget):
         else:
             self.vol_label.setText("N/A")
             
+class FetchDataWorker(QThread):
+    data_ready = pyqtSignal(str, object, object, object, object)
+    error = pyqtSignal(str)
+
+    def __init__(self, data_fetcher, ticker_symbol):
+        super().__init__()
+        self.data_fetcher = data_fetcher
+        self.ticker_symbol = ticker_symbol
+
+    def run(self):
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                price_future = executor.submit(self.data_fetcher.get_live_price, self.ticker_symbol)
+                sofr_future = executor.submit(self.data_fetcher.get_sofr_rate)
+                dividend_future = executor.submit(self.data_fetcher.get_dividend_yield, self.ticker_symbol)
+                vol_future = executor.submit(self.data_fetcher.get_historical_volatility, self.ticker_symbol, "1y")
+                live_price = price_future.result(timeout=10)
+                sofr = sofr_future.result(timeout=10)
+                dividend = dividend_future.result(timeout=10)
+                vol = vol_future.result(timeout=10)
+            self.data_ready.emit(self.ticker_symbol, live_price, sofr, dividend, vol)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class OptionPricingApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -182,6 +208,7 @@ class OptionPricingApp(QWidget):
         self.T = None
         self.option_type = None
         self.current_sigma = None 
+        self._fetch_worker = None
 
         self.init_ui()
 
@@ -335,45 +362,62 @@ class OptionPricingApp(QWidget):
             source_tab.fetch_data_button.setEnabled(False)
             source_tab.fetch_data_button.setText("⏳ Chargement...")
         
-        # Récupérer les données en parallèle avec ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            # Soumettre tous les appels API en parallèle
-            price_future = executor.submit(self.data_fetcher.get_live_price, ticker_symbol)
-            sofr_future = executor.submit(self.data_fetcher.get_sofr_rate)
-            dividend_future = executor.submit(self.data_fetcher.get_dividend_yield, ticker_symbol)
-            vol_future = executor.submit(self.data_fetcher.get_historical_volatility, ticker_symbol, "1y")
-            
-            # Récupérer les résultats
-            live_price = price_future.result(timeout=10) if price_future else None
-            self.r = sofr_future.result(timeout=10) or 0.01 if sofr_future else 0.01
-            self.q = dividend_future.result(timeout=10) or 0.0 if dividend_future else 0.0
-            self.historical_vol = vol_future.result(timeout=10) or 0.20 if vol_future else 0.20
-        
-        # Traiter les résultats
-        if live_price is not None:
-            self.S = live_price
-        else:
-            self.S = None
-            self.r = 0.01
-            self.q = 0.0
-            self.historical_vol = 0.20
-            QMessageBox.warning(self, "Données Manquantes",
-                                 f"Impossible de récupérer le prix de {ticker_symbol}. Les calculs suivants pourraient être inexacts.")
-        
-        if source_tab == self:
-            self.ticker_input.setText(self.current_ticker)
-        
-        # Réactiver le bouton
+        # Lancer un worker dans un QThread pour ne pas bloquer l'UI
+        self._fetch_worker = FetchDataWorker(self.data_fetcher, ticker_symbol)
+        self._fetch_worker.data_ready.connect(
+            lambda tk, price, sofr, div, vol: self._on_fetch_done(tk, price, sofr, div, vol, source_tab)
+        )
+        self._fetch_worker.error.connect(lambda msg: self._on_fetch_error(msg, source_tab))
+        self._fetch_worker.start()
+        return
+
+    def _on_fetch_done(self, ticker, live_price, sofr, dividend, vol, source_tab):
+        # Traiter les résultats reçus depuis le thread worker (éviter 'or' sur des numériques)
+        try:
+            self.current_ticker = ticker
+
+            self.S = live_price if live_price is not None else None
+
+            r_result = sofr if sofr is not None else None
+            self.r = r_result if r_result is not None else 0.01
+
+            q_result = dividend if dividend is not None else None
+            self.q = q_result if q_result is not None else 0.0
+
+            vol_result = vol if vol is not None else None
+            self.historical_vol = vol_result if vol_result is not None else 0.20
+
+            if self.S is None:
+                QMessageBox.warning(self, "Données Manquantes",
+                                     f"Impossible de récupérer le prix de {ticker}. Les calculs suivants pourraient être inexacts.")
+
+            if source_tab == self:
+                self.ticker_input.setText(self.current_ticker)
+
+            # Réactiver le bouton
+            if hasattr(source_tab, 'fetch_data_button'):
+                source_tab.fetch_data_button.setEnabled(True)
+                source_tab.fetch_data_button.setText("Récupérer/Synchroniser les Données")
+
+            # Nettoyage du worker
+            self._fetch_worker = None
+
+            self.update_all_tabs_financial_data(source_tab)
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur Traitement Données", f"Erreur lors du traitement des données: {e}")
+
+    def _on_fetch_error(self, msg, source_tab):
+        # Afficher l'erreur et réactiver le bouton
+        QMessageBox.critical(self, "Erreur de Récupération", f"Erreur lors de la récupération des données: {msg}")
         if hasattr(source_tab, 'fetch_data_button'):
             source_tab.fetch_data_button.setEnabled(True)
             source_tab.fetch_data_button.setText("Récupérer/Synchroniser les Données")
-
-        self.update_all_tabs_financial_data(source_tab)
+        self._fetch_worker = None
 
     def update_all_tabs_financial_data(self, source_tab=None):
         """Met à jour les labels d'information financière dans tous les onglets."""
 
-        sigma_to_use = self.current_sigma if self.current_sigma is not None else (self.historical_vol or 0.20)
+        sigma_to_use = self.current_sigma if self.current_sigma is not None else (self.historical_vol if self.historical_vol is not None else 0.20)
         pricing_method_to_use = self.pricing_method if self.pricing_method != "N/A" else "Vol Historique"
         
         # 1. Onglet BSM (Calculateur d'Option)
@@ -560,6 +604,19 @@ class OptionPricingApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erreur de Calcul CRR", f"Une erreur inattendue est survenue: {e}")
 
+    def _draw_payoff(self, ax, K, premium, option_type, position):
+        S_min = max(0, K * 0.7)
+        S_max = K * 1.3
+        S_range = np.linspace(S_min, S_max, 200)
+        payoff = self.strategy_manager.calculate_single_option_payoff(S_range, K, premium, option_type, position)
+        ax.plot(S_range, payoff, label=f'{position.capitalize()} {option_type.capitalize()} (K={K})')
+        ax.axhline(0, color='grey', linestyle='--', linewidth=0.8)
+        ax.axvline(K, color='grey', linestyle=':', linewidth=0.8, label=f'Strike K={K}')
+        ax.set_xlabel("Prix de l'actif sous-jacent à l'échéance (S)")
+        ax.set_ylabel("Profit/Perte")
+        ax.grid(True)
+        ax.legend()
+
     def plot_crr_payoff(self):
         try:
             K = float(self.crr_tab.strike_input.text())
@@ -586,9 +643,7 @@ class OptionPricingApp(QWidget):
             self.crr_tab.fig.clear()
             ax = self.crr_tab.fig.add_subplot(111)
 
-            self.strategy_manager.plot_payoff(
-                K, premium, option_type, position, ax=ax
-            )
+            self._draw_payoff(ax, K, premium, option_type, position)
 
             title_text = f"Payoff de l'Option Américaine {position.capitalize()} {option_type.capitalize()} (K={K:.2f}, Premium={premium:.4f})"
             title_text += f"\nBreakeven = {breakeven:.2f}"
@@ -601,112 +656,7 @@ class OptionPricingApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erreur de Tracé", f"Une erreur est survenue lors du tracé du payoff: {e}")
 
-    def plot_volatility_smile(self):
-        """
-        Trace une courbe continue (lissage Spline) du sourire de volatilité.
-        """
-        try:
-            ticker_symbol = self.smile_tab.ticker_input.text().strip().upper()
-            maturity_qdate = self.smile_tab.maturity_date_input.date()
-            maturity_datetime = datetime(maturity_qdate.year(), maturity_qdate.month(), maturity_qdate.day())
 
-            if not ticker_symbol:
-                QMessageBox.warning(self, "Erreur", "Veuillez entrer un symbole de ticker.")
-                return
-
-            # Synchroniser les données financières (S)
-            self.fetch_data_for_tab(ticker_symbol, self.smile_tab)
-            
-            # Récupère le DataFrame complet des options (Calls + Puts)
-            df_smile, closest_date = self.data_fetcher.get_volatility_smile_data(ticker_symbol, maturity_datetime)
-
-            if df_smile is None or closest_date is None or df_smile.empty:
-                QMessageBox.warning(self, "Données Manquantes", f"Impossible de récupérer la chaîne d'options pour {ticker_symbol} autour de {maturity_datetime.strftime('%Y-%m-%d')}.")
-                self.smile_tab.fig.clear()
-                self.smile_tab.canvas.draw()
-                return
-
-            current_price = self.S 
-            
-            # --- NETTOYAGE DES DONNÉES ---
-            # Vérification et suppression des NaN
-            df_smile.dropna(subset=['impliedVolatility', 'strike'], inplace=True)
-            # Filtre IV nulle
-            df_smile = df_smile[df_smile['impliedVolatility'] > 1e-6]
-            # Filtre Prix nuls (si lastPrice existe)
-            if 'lastPrice' in df_smile.columns: 
-                 df_smile = df_smile[df_smile['lastPrice'] >= 0.10]
-            
-            # Filtre Moneyness (± 40% autour du prix actuel pour avoir une courbe pertinente)
-            if current_price:
-                lower = current_price * 0.60 
-                upper = current_price * 1.40
-                df_smile = df_smile[(df_smile['strike'] >= lower) & (df_smile['strike'] <= upper)]
-
-            if df_smile.empty or len(df_smile) < 5:
-                QMessageBox.information(self, "Données insuffisantes", "Pas assez de points valides pour tracer une courbe lisse.")
-                self.smile_tab.fig.clear()
-                self.smile_tab.canvas.draw()
-                return
-
-            # --- PRÉPARATION DU LISSAGE (SPLINE) ---
-            
-            self.smile_tab.fig.clear()
-            ax = self.smile_tab.fig.add_subplot(111)
-
-            # Conversion IV en %
-            df_smile['IV_percent'] = df_smile['impliedVolatility'] * 100
-            
-            # TRI OBLIGATOIRE par Strike pour l'interpolation
-            df_smile = df_smile.sort_values(by='strike')
-            
-            X = df_smile['strike'].values
-            Y = df_smile['IV_percent'].values
-            
-            # Création de la courbe lisse (300 points interpolés)
-            # k=3 pour une spline cubique (courbe douce)
-            try:
-                X_smooth = np.linspace(X.min(), X.max(), 300)
-                spl = make_interp_spline(X, Y, k=3)
-                Y_smooth = spl(X_smooth)
-                
-                # Tracé de la LIGNE CONTINUE
-                ax.plot(X_smooth, Y_smooth, label='Sourire de Volatilité (Lissé)', color='blue', linewidth=2.5)
-            except Exception as e_spline:
-                print(f"Erreur Spline: {e_spline}. Fallback sur un tracé linéaire.")
-                ax.plot(X, Y, label='Sourire (Linéaire)', color='blue', linewidth=2)
-
-            # --- ÉLÉMENTS GRAPHIQUES SUPPLÉMENTAIRES ---
-
-            # Points bruts (discrets) en arrière-plan pour référence
-            calls = df_smile[df_smile['type'] == 'call']
-            puts = df_smile[df_smile['type'] == 'put']
-            ax.scatter(calls['strike'], calls['IV_percent'], label='Calls (Brut)', marker='o', s=15, alpha=0.4, color='green')
-            ax.scatter(puts['strike'], puts['IV_percent'], label='Puts (Brut)', marker='x', s=15, alpha=0.4, color='red')
-
-            # Ligne verticale ATM
-            if current_price:
-                ax.axvline(current_price, color='red', linestyle='--', linewidth=1.5, label=f'Prix Actuel ({current_price:.2f})')
-
-            # Titres et Labels
-            ax.set_title(f"Sourire de Volatilité : {ticker_symbol} (Échéance {closest_date})", fontsize=12, fontweight='bold')
-            ax.set_xlabel('Prix d\'Exercice (Strike)', fontsize=10)
-            ax.set_ylabel('Volatilité Implicite (%)', fontsize=10)
-            
-            # Zoom intelligent sur l'axe Y (éviter les valeurs extrêmes > 150%)
-            y_max_visible = np.percentile(Y, 95) * 1.2 # Prend le 95ème percentile + 20% de marge
-            ax.set_ylim(0, min(y_max_visible, 200)) # Cap absolu à 200%
-
-            ax.grid(True, linestyle='--', alpha=0.6)
-            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3) # Légende en bas
-            
-            # Ajustement pour la légende
-            self.smile_tab.fig.subplots_adjust(bottom=0.2)
-            
-            self.smile_tab.canvas.draw()
-
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur de Tracé", f"Erreur lors du tracé du sourire: {e}")
 
 
     def handle_greek_click(self, row, column):
@@ -795,9 +745,7 @@ class OptionPricingApp(QWidget):
             self.fig.clear()
             ax = self.fig.add_subplot(111)
 
-            self.strategy_manager.plot_payoff(
-                K, premium, option_type, position, ax=ax
-            )
+            self._draw_payoff(ax, K, premium, option_type, position)
 
             title_text = f"Payoff de l'Option Européenne {position.capitalize()} {option_type.capitalize()} (K={K:.2f}, Premium={premium:.4f})"
             if breakeven is not None:
@@ -876,7 +824,7 @@ class OptionPricingApp(QWidget):
         """Synchronisation des données entre l'onglet BSM et les autres onglets."""
         # Synchronisation des données entre l'onglet BSM et les autres onglets
         if self.S is not None: # Ne synchronise que si les données ont été chargées au moins une fois
-            sigma_to_use = self.current_sigma if self.current_sigma is not None else (self.historical_vol or 0.20)
+            sigma_to_use = self.current_sigma if self.current_sigma is not None else (self.historical_vol if self.historical_vol is not None else 0.20)
             pricing_method_to_use = self.pricing_method if self.pricing_method != "N/A" else "Vol Historique"
 
             if index == self.tab_widget.indexOf(self.crr_tab):
