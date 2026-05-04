@@ -11,13 +11,9 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QThread, pyqtSignal, QUrl
 from PyQt5.QtGui import QDoubleValidator
 import plotly.graph_objects as go
-import numpy as np
 from datetime import datetime
 
 from implied_volatility_surface import ImpliedVolatilitySurface
-
-# Seuil max d'IV accepté — au-delà : options illiquides / données aberrantes
-IV_MAX_PCT = 2.50 # 250% d'IV
 
 
 class SurfaceCalculationThread(QThread):
@@ -27,10 +23,18 @@ class SurfaceCalculationThread(QThread):
     error    = pyqtSignal(str)
     progress = pyqtSignal(int)
 
-    def __init__(self, ticker_symbol: str, current_price: Optional[float] = None):
+    def __init__(
+        self,
+        ticker_symbol: str,
+        current_price: Optional[float] = None,
+        current_rate: float = 0.05,
+        current_dividend: float = 0.0,
+    ):
         super().__init__()
         self.ticker_symbol = ticker_symbol
         self.current_price = current_price
+        self.current_rate = current_rate
+        self.current_dividend = current_dividend
         self.surface_calculator = ImpliedVolatilitySurface()
         self.raw_data  = None
         self.grid_data = None
@@ -39,7 +43,8 @@ class SurfaceCalculationThread(QThread):
         try:
             self.progress.emit(25)
             self.raw_data, self.grid_data = self.surface_calculator.get_surface_for_ticker(
-                self.ticker_symbol, self.current_price
+                self.ticker_symbol, self.current_price,
+                self.current_rate, self.current_dividend,
             )
             self.progress.emit(100)
             self.finished.emit()
@@ -61,6 +66,8 @@ class VolatilitySurfaceTab(QWidget):
         super().__init__(parent)
         self.surface_calculator = ImpliedVolatilitySurface()
         self.current_price: Optional[float] = None
+        self.current_rate: float = 0.05
+        self.current_dividend: float = 0.0
         self.raw_data  = None
         self.grid_data = None
         self.calculation_thread: Optional[SurfaceCalculationThread] = None
@@ -148,10 +155,13 @@ class VolatilitySurfaceTab(QWidget):
         self.save_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
-        self.status_label.setText("⏳ Récupération des données de marché...")
+        self.status_label.setText("⏳ Récupération et calcul IV (OTM-only, inversion BSM)...")
         self.status_label.setStyleSheet("color: orange;")
 
-        self.calculation_thread = SurfaceCalculationThread(ticker, current_price)
+        self.calculation_thread = SurfaceCalculationThread(
+            ticker, current_price,
+            self.current_rate, self.current_dividend,
+        )
         self.calculation_thread.progress.connect(self._on_progress)
         self.calculation_thread.finished.connect(self._on_finished)
         self.calculation_thread.error.connect(self._on_error)
@@ -165,25 +175,22 @@ class VolatilitySurfaceTab(QWidget):
             self.raw_data  = self.calculation_thread.raw_data
             self.grid_data = self.calculation_thread.grid_data
 
-        # Filtrage des IV aberrantes (options très OTM illiquides)
-        if self.raw_data is not None and not self.raw_data.empty:
-            before = len(self.raw_data)
-            self.raw_data = self.raw_data[
-                self.raw_data['IV'] <= IV_MAX_PCT
-            ].copy()
-            filtered = before - len(self.raw_data)
-            if filtered > 0:
-                print(f"Surface IV : {filtered} points filtrés "
-                      f"(IV > {IV_MAX_PCT*100:.0f}%)")
+        # Les filtres (moneyness, liquidité, IV) sont désormais appliqués
+        # en amont dans le pipeline ImpliedVolatilitySurface.
 
         if self.raw_data is not None and not self.raw_data.empty:
             self._display_figure()
+            n_calls = len(self.raw_data[self.raw_data['Option_Type'] == 'call'])
+            n_puts  = len(self.raw_data[self.raw_data['Option_Type'] == 'put'])
             self.status_label.setText(
-                f"✓ Surface IV calculée ({len(self.raw_data)} points)")
+                f"OK Surface IV : {len(self.raw_data)} points "
+                f"({n_calls} calls OTM + {n_puts} puts OTM)")
             self.status_label.setStyleSheet("color: green;")
             self.save_button.setEnabled(True)
         else:
-            self.status_label.setText("✗ Erreur : aucune donnée valide")
+            self.status_label.setText(
+                "Erreur : aucune donnée IV valide apres filtrage "
+                "(moneyness / liquidite / inversion BSM)")
             self.status_label.setStyleSheet("color: red;")
 
         self.calculate_button.setEnabled(True)
@@ -235,7 +242,7 @@ class VolatilitySurfaceTab(QWidget):
         # Surface interpolée
         if self.grid_data is not None:
             X_grid, Y_grid, Z_grid = self.grid_data
-            Z_pct = np.clip(Z_grid * 100, 0, IV_MAX_PCT * 100)
+            Z_pct = Z_grid * 100
             fig.add_trace(go.Surface(
                 x=X_grid[0],
                 y=Y_grid[:, 0],
@@ -302,7 +309,7 @@ class VolatilitySurfaceTab(QWidget):
         limite et fonctionne de manière identique sur Mac et Windows.
         """
         try:
-            import tempfile, os
+            import tempfile
             fig = self._build_figure()
 
             # Fichier temporaire persistant le temps de la session
@@ -354,9 +361,20 @@ class VolatilitySurfaceTab(QWidget):
     # Synchronisation depuis gui_app
     # =========================================================================
 
-    def update_financial_params(self, ticker: str, S: float) -> None:
-        """Met à jour le ticker et le prix (appelé depuis l'app principale)."""
+    def update_financial_params(
+        self,
+        ticker: str,
+        S: Optional[float] = None,
+        r: Optional[float] = None,
+        q: Optional[float] = None,
+    ) -> None:
+        """Met à jour le ticker, le prix, r et q (appelé depuis l'app principale)."""
         if ticker:
             self.ticker_input.setText(ticker)
         if S is not None:
             self.price_input.setText(f"{S:.2f}")
+            self.current_price = S
+        if r is not None:
+            self.current_rate = r
+        if q is not None:
+            self.current_dividend = q

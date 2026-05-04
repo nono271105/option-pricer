@@ -1,8 +1,6 @@
 # volatility_smile_tab.py
 
-import numpy as np
-import matplotlib.pyplot as plt
-from typing import Optional, Tuple
+from typing import Optional
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QLineEdit,
     QPushButton, QFormLayout, QMessageBox, QDateEdit
@@ -11,8 +9,6 @@ from PyQt5.QtCore import QDate
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from datetime import datetime, date
-from scipy.interpolate import interp1d
-import pandas as pd
 
 from data_fetcher import DataFetcher
 from volatility_smile_logic import VolatilitySmileLogic
@@ -45,7 +41,8 @@ class VolatilitySmileTab(QWidget):
         self.ticker_input = QLineEdit()
         self.ticker_input.setPlaceholderText("Ex: AAPL")
         
-        self.maturity_date_input = QDateEdit(QDate.currentDate().addMonths(1))
+        from utils import get_default_maturity_date
+        self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("yyyy-MM-dd")
         

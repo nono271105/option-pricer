@@ -1,9 +1,8 @@
 import yfinance as yf
 import requests
-from datetime import datetime, date
+from datetime import datetime
 from dotenv import load_dotenv
 import os
-import pandas as pd
 import numpy as np
 from typing import Optional, Tuple
 from cache import global_cache

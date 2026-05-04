@@ -4,7 +4,7 @@ Module de cache pour les données API avec TTL (Time To Live).
 """
 
 from typing import Optional, Any, Dict
-from datetime import datetime, timedelta
+from datetime import datetime
 import threading
 
 
@@ -93,4 +93,4 @@ class DataCache:
 
 
 # Instance globale du cache (partagée entre tous les modules)
-global_cache = DataCache(ttl_seconds=1800)  # 1 heure par défaut
+global_cache = DataCache(ttl_seconds=3600)  # 1 heure par défaut

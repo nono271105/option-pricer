@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.stats import norm
-from typing import Dict, Literal, Optional
+from typing import Dict, Literal
 
 class OptionModels:
     def black_scholes_price(
@@ -30,17 +30,19 @@ class OptionModels:
         """
         if T <= 0:
             if option_type == 'call':
-                return max(0, S - K)
+                return np.maximum(0, S - K)
             elif option_type == 'put':
-                return max(0, K - S)
+                return np.maximum(0, K - S)
+            raise ValueError("option_type doit être 'call' ou 'put'")
 
         # Empêcher les erreurs si sigma est trop petit ou négatif
         if sigma <= 1e-6:
             if option_type == 'call':
-                return max(0, S * np.exp(-q * T) - K * np.exp(-r * T))
+                return np.maximum(0, S * np.exp(-q * T) - K * np.exp(-r * T))
             elif option_type == 'put':
-                return max(0, K * np.exp(-r * T) - S * np.exp(-q * T))
-            
+                return np.maximum(0, K * np.exp(-r * T) - S * np.exp(-q * T))
+            raise ValueError("option_type doit être 'call' ou 'put'")
+
         d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
         d2 = d1 - sigma * np.sqrt(T)
 
@@ -159,44 +161,43 @@ class OptionModels:
                 return max(0, S - K)
             elif option_type == 'put':
                 return max(0, K - S)
+            raise ValueError("option_type doit être 'call' ou 'put'")
 
         dt = T / N
         df = np.exp(-r * dt)
-        df_q = np.exp(-(r - q) * dt)
 
         u = np.exp(sigma * np.sqrt(dt))
         d = 1.0 / u
         p = (np.exp((r - q) * dt) - d) / (u - d)
 
         # 1. Initialiser le prix de l'actif aux nœuds à l'échéance (t=N)
-        stock_prices = np.zeros(N + 1)
-        for j in range(N + 1):
-            stock_prices[j] = S * (u**j) * (d**(N - j))
+        # S * u^j * d^(N-j) où j va de N à 0 (pour correspondre à l'ordre up-down)
+        j_values = np.arange(N, -1, -1)
+        stock_prices = S * (u**j_values) * (d**(N - j_values))
 
         # 2. Calculer la valeur de l'option à l'échéance (t=N)
-        option_values = np.zeros(N + 1)
         if option_type == 'call':
             option_values = np.maximum(stock_prices - K, 0)
         elif option_type == 'put':
             option_values = np.maximum(K - stock_prices, 0)
         
-        # 3. Rétropropagation (Backward Induction)
+        # 3. Rétropropagation (Backward Induction) vectorisée
         for i in range(N - 1, -1, -1):
-            for j in range(i + 1):
-                # Valeur de continuation (Prix de l'option européenne actualisé d'un pas)
-                continuation_value = df * (p * option_values[j + 1] + (1 - p) * option_values[j])
-                
-                # Prix de l'actif à ce noeud
-                S_node = S * (u**j) * (d**(i - j))
-                
-                # Valeur d'exercice immédiat
-                if option_type == 'call':
-                    exercise_value = max(0, S_node - K)
-                elif option_type == 'put':
-                    exercise_value = max(0, K - S_node)
-                
-                # Option Américaine: Max(Continuation, Exercice)
-                option_values[j] = max(continuation_value, exercise_value)
+            # Prix de l'actif aux noeuds à l'étape i
+            j_i = np.arange(i, -1, -1)
+            S_nodes = S * (u**j_i) * (d**(i - j_i))
+            
+            # Valeur de continuation
+            continuation = df * (p * option_values[:-1] + (1 - p) * option_values[1:])
+            
+            # Valeur d'exercice immédiat
+            if option_type == 'call':
+                exercise = np.maximum(S_nodes - K, 0)
+            elif option_type == 'put':
+                exercise = np.maximum(K - S_nodes, 0)
+            
+            # Option Américaine: Max(Continuation, Exercice)
+            option_values = np.maximum(continuation, exercise)
 
         return option_values[0]
 
@@ -231,52 +232,78 @@ class OptionModels:
             Dict[str, float]: Dictionnaire avec clés 'delta', 'gamma', 'theta', 'vega', 'rho'
         """
         
-        # Fonction utilitaire pour le prix CRR
-        def crr_price(S_local: float, sigma_local: float, r_local: float) -> float:
-            return self.cox_ross_rubinstein_price(S_local, K, T, r_local, q, sigma_local, N, option_type)
+        # Pour Delta, Gamma, Theta, on reconstruit l'arbre jusqu'à t=2 pour
+        # éviter les instabilités numériques sévères des différences finies
+        # sur un modèle discret (le prix CRR n'est pas lisse par rapport à S et T).
+        
+        dt = T / N
+        df = np.exp(-r * dt)
+        u = np.exp(sigma * np.sqrt(dt))
+        d = 1.0 / u
+        p = (np.exp((r - q) * dt) - d) / (u - d)
+        
+        j_values = np.arange(N, -1, -1)
+        stock_prices = S * (u**j_values) * (d**(N - j_values))
+        
+        if option_type == 'call':
+            option_values = np.maximum(stock_prices - K, 0)
+        else:
+            option_values = np.maximum(K - stock_prices, 0)
             
-        # Delta (dérivée par rapport à S)
-        eps_S = max(S * 0.01, 0.5)  # epsilon relatif pour éviter les problèmes de précision
-        S_plus  = S + eps_S
-        S_minus = max(S - eps_S, 0.01)
-        C_plus   = crr_price(S_plus,  sigma, r)
-        C_minus  = crr_price(S_minus, sigma, r)
-        C_center = crr_price(S, sigma, r)
-        delta = (C_plus - C_minus) / (2 * eps_S)
+        C2, C1, C0 = None, None, None
+        
+        for i in range(N - 1, -1, -1):
+            j_i = np.arange(i, -1, -1)
+            S_nodes = S * (u**j_i) * (d**(i - j_i))
+            
+            continuation = df * (p * option_values[:-1] + (1 - p) * option_values[1:])
+            
+            if option_type == 'call':
+                exercise = np.maximum(S_nodes - K, 0)
+            else:
+                exercise = np.maximum(K - S_nodes, 0)
+                
+            option_values = np.maximum(continuation, exercise)
+            
+            if i == 2: C2 = option_values.copy()
+            elif i == 1: C1 = option_values.copy()
+            elif i == 0: C0 = option_values[0]
+            
+        # Delta (à partir des nœuds t=1)
+        # C1[0] est le nœud up (S*u), C1[1] est le nœud down (S*d)
+        delta = (C1[0] - C1[1]) / (S*u - S*d)
+        
+        # Gamma (à partir des nœuds t=2)
+        # C2 = [up-up, up-down, down-down]
+        delta_up = (C2[0] - C2[1]) / (S*u**2 - S)
+        delta_dn = (C2[1] - C2[2]) / (S - S*d**2)
+        gamma = (delta_up - delta_dn) / ((S*u**2 - S*d**2) / 2.0)
+        
+        # Theta (à partir des nœuds t=2 et t=0)
+        # C2[1] est le nœud où l'actif vaut S après un up et un down (S*u*d = S)
+        theta_annual = (C2[1] - C0) / (2 * dt)
+        theta_daily = theta_annual / 365.0
 
-        # Gamma (dérivée seconde par rapport à S)
-        C_center = crr_price(S, sigma, r)
-        gamma = (C_plus - 2 * C_center + C_minus) / (eps_S**2)
-        
-        # Theta (dérivée par rapport à T, en années)
-        epsilon_t = 1e-4  # petit pas en années (indépendant d'epsilon qui concerne S)
-        T_minus = max(T - epsilon_t, 1e-6)
-        
-        C_t_minus = self.cox_ross_rubinstein_price(S, K, T_minus, r, q, sigma, N, option_type)
-        theta_annual = (C_t_minus - C_center) / epsilon_t  # changement par an
-        theta_daily = theta_annual / 365.0  # changement par jour 
-        
+        # Vega et Rho n'ont pas de formule simple dans l'arbre, on garde les différences finies
+        def crr_price(sigma_local: float, r_local: float) -> float:
+            return self.cox_ross_rubinstein_price(S, K, T, r_local, q, sigma_local, N, option_type)
 
         # Vega (dérivée par rapport à sigma)
-        sigma_plus  = sigma + 0.01
-        sigma_minus = max(sigma - 0.01, 1e-4)
-        C_sigma_plus = crr_price(S, sigma_plus, r)
-        C_sigma_minus = crr_price(S, sigma_minus, r)
-        vega = (C_sigma_plus - C_sigma_minus) / 0.02 
+        eps_sigma = 0.01
+        sigma_plus  = sigma + eps_sigma
+        sigma_minus = max(sigma - eps_sigma, 1e-4)
+        vega = (crr_price(sigma_plus, r) - crr_price(sigma_minus, r)) / (sigma_plus - sigma_minus)
         
-        # Rho 
-        r_plus  = r + 0.0001
-        r_minus = r - 0.0001
-        C_r_plus = crr_price(S, sigma, r_plus)
-        C_r_minus = crr_price(S, sigma, r_minus)
-        rho = (C_r_plus - C_r_minus) / 0.0002
-        rho = rho / 100.0
+        # Rho (dérivée par rapport à r)
+        eps_r = 0.0001
+        rho_val = (crr_price(sigma, r + eps_r) - crr_price(sigma, r - eps_r)) / (2 * eps_r)
+        rho_val = rho_val / 100.0
 
         return {
             'delta': delta,
             'gamma': gamma,
             'theta': theta_daily,
             'vega': vega,
-            'rho': rho
+            'rho': rho_val
         }
 

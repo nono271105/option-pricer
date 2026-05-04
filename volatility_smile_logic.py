@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 from scipy.optimize import brentq
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Any
 
 from option_models import OptionModels
 
@@ -30,13 +30,13 @@ class VolatilitySmileLogic:
             try:
                 bs_price = self.option_models.black_scholes_price(S, K, T, r, sigma, q, option_type)
                 return bs_price - market_price
-            except:
+            except Exception:
                 return 1e10
 
         try:
             iv = brentq(objective, 0.01, 3.0, xtol=1e-6, maxiter=100)
             return iv
-        except:
+        except Exception:
             return None
 
     def process_smile_data(self, opt_chain: Any, current_price: float, T: float, r: float, q: float) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[pd.DataFrame]]:

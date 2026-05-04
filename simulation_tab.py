@@ -1,9 +1,7 @@
-import numpy as np
-from typing import Optional, Dict, Tuple
+from typing import Optional
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QComboBox, QFormLayout, QGroupBox, QGridLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QDateEdit
+    QWidget, QVBoxLayout, QLabel, QLineEdit,
+    QPushButton, QFormLayout, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QDateEdit
 )
 from PyQt5.QtGui import QDoubleValidator, QIntValidator, QColor
 from PyQt5.QtCore import QDate, Qt
@@ -41,7 +39,8 @@ class CallPriceSimulationTab(QWidget):
         self.strike_input.setValidator(QDoubleValidator(0.0, 100000.0, 2))
         params_layout.addRow("Prix d'exercice (K):", self.strike_input)
 
-        self.maturity_date_input = QDateEdit(QDate.currentDate().addMonths(3))
+        from utils import get_default_maturity_date
+        self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
         params_layout.addRow("Date d'échéance:", self.maturity_date_input)

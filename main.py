@@ -1,12 +1,9 @@
-import os
 import sys
-from typing import Optional
 
 # IMPORTANT: Importer QtWebEngineWidgets AVANT QApplication
 # Cela évite les erreurs de contexte OpenGL
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
-from PyQt5 import QtWebEngineWidgets  # noqa: F401 - Important pour QWebEngineView
 
 from gui_app import OptionPricingApp
 

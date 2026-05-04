@@ -21,9 +21,36 @@ MAX_DAYS_TO_MATURITY = 400
 MIN_STRIKES_REQUIRED = 5
 MAX_STRIKES_PER_EXPIRATION = 100
 
-# Filtres de volatilité implicite
-IV_MIN_THRESHOLD = 0.001      # Minimum IV (0.1%)
-IV_MAX_THRESHOLD = 5.0         # Maximum IV (500%)
+# ═══════════════════════════════════════════════════════════════════
+# FILTRES DE MONEYNESS (conformes Bloomberg)
+# ═══════════════════════════════════════════════════════════════════
+
+# Bornes de moneyness K/S — seules les options dans cette plage sont retenues.
+# Bloomberg utilise typiquement 0.80–1.20. On élargit légèrement à 0.70–1.30
+# pour capturer plus de la structure du skew tout en éliminant le bruit.
+MONEYNESS_MIN = 0.70           # K/S >= 70%
+MONEYNESS_MAX = 1.30           # K/S <= 130%
+
+# ═══════════════════════════════════════════════════════════════════
+# FILTRES DE LIQUIDITÉ
+# ═══════════════════════════════════════════════════════════════════
+
+# Spread bid-ask maximal (relatif) — au-delà, l'option est trop illiquide
+# et le mid-price n'est pas représentatif de la fair value.
+MAX_SPREAD_PCT = 0.50          # 50% max de spread relatif (ask-bid)/mid
+
+# Open Interest minimum — en l'absence de volume du jour,
+# l'OI garantit que l'option est activement détenue/cotée.
+MIN_OPEN_INTEREST = 10
+
+# ═══════════════════════════════════════════════════════════════════
+# BORNES D'IV (résultat de l'inversion BSM)
+# ═══════════════════════════════════════════════════════════════════
+
+# Bornes de la recherche brentq et du résultat accepté.
+# Une IV < 1% ou > 300% est financièrement aberrante.
+IV_MIN_THRESHOLD = 0.01        # Minimum IV acceptée (1%)
+IV_MAX_THRESHOLD = 3.0         # Maximum IV acceptée (300%)
 
 # ═══════════════════════════════════════════════════════════════════
 # PARAMÈTRES D'INTERPOLATION

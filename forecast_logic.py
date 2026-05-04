@@ -3,7 +3,7 @@ Logique métier pour le forecast TimesFM et le repricing BSM associé.
 """
 
 import numpy as np
-from typing import Tuple, Dict, Any
+from typing import Tuple
 
 class ForecastLogic:
     """Logique pour générer des prévisions avec TimesFM et repricer l'option."""
@@ -55,14 +55,19 @@ class ForecastLogic:
         """
         Calcule les prix d'options et les grecs (delta) sur l'historique et le forecast.
         
+        Args:
+            point_forecast: Prévisions de prix (point forecast)
+            history_prices: Prix historiques
+            horizon: Horizon de prévision
+            K: Prix d'exercice
+            T_total: Temps total jusqu'à maturité (années)
+            r: Taux sans risque
+            sigma: Volatilité
+            q: Rendement de dividende
+            option_type: Type d'option ('call' ou 'put')
+
         Returns:
-            pf (point forecast array 1D)
-            option_prices (array 1D)
-            deltas (array 1D)
-            hist_slice (array 1D)
-            hist_option_prices (array 1D)
-            hist_deltas (array 1D)
-            x_hist (array 1D)
+            Tuple contenant les séries de données traitées pour l'affichage.
         """
         pf = point_forecast[0]
 

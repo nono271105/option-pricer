@@ -1,7 +1,11 @@
+import logging
 import math
 import numpy as np
-from typing import Literal, Optional, List, Dict, Any
+from typing import Literal, List, Dict
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
 
 class StrategyManager:
     def __init__(self) -> None:
@@ -187,8 +191,9 @@ class StrategyManager:
                 ticker, strike, maturity_datetime, option_type)
             if market_price is not None and market_price > 0:
                 return float(market_price)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Prime marché indisponible pour %s %s K=%s, fallback BSM: %s",
+                           ticker, option_type, strike, exc)
 
         # Fallback BSM — use the current spot price, not the strike
         return option_models.black_scholes_price(S=S_current, K=strike, T=T,
@@ -231,18 +236,17 @@ class StrategyManager:
             for leg in legs
         )
 
-        total = np.zeros(len(S_range))
-        for s_val in range(len(S_range)):
-            S_i = S_range[s_val]
-            val = 0.0
-            for leg in legs:
-                bsm = option_models.black_scholes_price(
-                    S=S_i, K=leg["strike"], T=T,
-                    r=r, sigma=sigma, q=q,
-                    option_type=leg["option_type"]
-                )
-                val += bsm if leg["position"] == "long" else -bsm
-            total[s_val] = val - cost
+        total = np.full(len(S_range), -cost, dtype=float)
+        for leg in legs:
+            bsm = option_models.black_scholes_price(
+                S=S_range, K=leg["strike"], T=T,
+                r=r, sigma=sigma, q=q,
+                option_type=leg["option_type"]
+            )
+            if leg["position"] == "long":
+                total += bsm
+            else:
+                total -= bsm
 
         return total
 

@@ -1,19 +1,19 @@
 """
-Onglet Forecast TimesFM — Prévision du prix sous-jacent via TimesFM 2.5-200M
+Onglet Forecast TimesFM : prévision du prix sous-jacent via TimesFM 2.5-200M
 et repricing BSM jour par jour sur l'horizon de forecast.
 
-Le modèle TimesFM (~800 MB) est importé DANS le QThread pour ne pas bloquer
+Le modèle TimesFM (~800 MB) est importé dans le QThread pour ne pas bloquer
 le démarrage de l'application.
 """
 
 import numpy as np
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QComboBox, QFormLayout, QGroupBox,
-    QMessageBox, QDateEdit, QSpinBox, QSplitter, QProgressBar
+    QMessageBox, QDateEdit, QSpinBox, QProgressBar
 )
 from PyQt5.QtCore import QDate, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QDoubleValidator
@@ -93,7 +93,8 @@ class ForecastTimesFMTab(QWidget):
         self.init_ui()
 
     # ------------------------------------------------------------------ UI
-    def init_ui(self):
+    def init_ui(self) -> None:
+        """Initialise l'interface utilisateur de l'onglet Forecast."""
         main_layout = QHBoxLayout(self)
 
         # === Panneau de contrôle (gauche) ===
@@ -119,7 +120,8 @@ class ForecastTimesFMTab(QWidget):
         form.addRow("Strike (K) :", self.strike_input)
 
         # Date de maturité
-        self.maturity_date_input = QDateEdit(QDate.currentDate().addMonths(3))
+        from utils import get_default_maturity_date
+        self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
         form.addRow("Maturité :", self.maturity_date_input)

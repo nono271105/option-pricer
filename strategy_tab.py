@@ -244,7 +244,8 @@ class StrategyTab(QWidget):
         self.strategy_combo = QComboBox()
         strat_form.addRow("Stratégie:", self.strategy_combo)
 
-        self.maturity_date_input = QDateEdit(QDate.currentDate().addMonths(3))
+        from utils import get_default_maturity_date
+        self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
         strat_form.addRow("Date d'échéance:", self.maturity_date_input)

@@ -23,7 +23,7 @@ from PyQt5.QtWidgets import (
     QFormLayout, QGroupBox,
     QMessageBox, QDateEdit, QSizePolicy,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QDate
+from PyQt5.QtCore import QThread, pyqtSignal, QDate
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -317,7 +317,8 @@ class ExoticOptionsTab(QWidget):
         self.strike_input.setValidator(QDoubleValidator(0.0, 1e6, 2))
         form.addRow("Prix d'exercice (K):", self.strike_input)
 
-        self.maturity_date_input = QDateEdit(QDate.currentDate().addMonths(3))
+        from utils import get_default_maturity_date
+        self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
         form.addRow("Date d'échéance:", self.maturity_date_input)

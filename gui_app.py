@@ -10,9 +10,7 @@ from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
-from datetime import date, datetime 
-from scipy.interpolate import make_interp_spline
-from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
 
 from data_fetcher import DataFetcher
 from option_models import OptionModels
@@ -69,7 +67,8 @@ class CRRModelTab(QWidget):
         self.strike_input.setValidator(QDoubleValidator(0.0, 100000.0, 2))
         control_form_layout.addRow("Prix d'exercice (K):", self.strike_input)
 
-        self.maturity_date_input = QDateEdit(QDate.currentDate().addMonths(3))
+        from utils import get_default_maturity_date
+        self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
         control_form_layout.addRow("Date d'échéance:", self.maturity_date_input)
@@ -111,13 +110,13 @@ class CRRModelTab(QWidget):
         self.live_price_label = QLabel("N/A")
         self.risk_free_rate_label = QLabel("N/A")
         self.dividend_yield_label = QLabel("N/A")
-        self.vol_label = QLabel("N/A")
+        self.volatility_label = QLabel("N/A")
         self.crr_price_label = QLabel("N/A")
 
         current_data_layout.addRow("Prix Actuel (S):", self.live_price_label)
         current_data_layout.addRow("Taux Sans Risque SOFR (r):", self.risk_free_rate_label)
         current_data_layout.addRow("Rendement Dividende (q):", self.dividend_yield_label)
-        current_data_layout.addRow("Volatilité Utilisée (σ):", self.vol_label)
+        current_data_layout.addRow("Volatilité Utilisée (σ):", self.volatility_label)
         current_data_layout.addRow("Prix de l'option (CRR):", self.crr_price_label)
         current_data_group.setLayout(current_data_layout)
         display_panel_layout.addWidget(current_data_group)
@@ -148,7 +147,7 @@ class CRRModelTab(QWidget):
 
         main_layout.addLayout(display_panel_layout, 2)
 
-    def update_financial_data(self, S, r, q, sigma_used, ticker, pricing_method=""):
+    def update_financial_data(self, S: float, r: float, q: float, sigma_used: float, ticker: str, pricing_method: str = "") -> None:
         """Met à jour les labels d'information financière de l'onglet CRR."""
         if self.ticker_input.text() == "":
             self.ticker_input.setText(ticker)
@@ -158,9 +157,9 @@ class CRRModelTab(QWidget):
         self.dividend_yield_label.setText(f"{q*100:.2f}%" if q is not None else "N/A")
         
         if sigma_used is not None:
-            self.vol_label.setText(f"{sigma_used*100:.2f}% ({pricing_method})")
+            self.volatility_label.setText(f"{sigma_used*100:.2f}% ({pricing_method})")
         else:
-            self.vol_label.setText("N/A")
+            self.volatility_label.setText("N/A")
             
 class FetchDataWorker(QThread):
     data_ready = pyqtSignal(str, object, object, object, object)
@@ -171,19 +170,20 @@ class FetchDataWorker(QThread):
         self.data_fetcher = data_fetcher
         self.ticker_symbol = ticker_symbol
 
-    def run(self):
+    def run(self) -> None:
+        """Exécute la récupération des données en arrière-plan."""
         try:
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=4) as executor:
                 price_future = executor.submit(self.data_fetcher.get_live_price, self.ticker_symbol)
                 sofr_future = executor.submit(self.data_fetcher.get_sofr_rate)
                 dividend_future = executor.submit(self.data_fetcher.get_dividend_yield, self.ticker_symbol)
-                vol_future = executor.submit(self.data_fetcher.get_historical_volatility, self.ticker_symbol, "1y")
+                volatility_future = executor.submit(self.data_fetcher.get_historical_volatility, self.ticker_symbol, "1y")
                 live_price = price_future.result(timeout=10)
                 sofr = sofr_future.result(timeout=10)
                 dividend = dividend_future.result(timeout=10)
-                vol = vol_future.result(timeout=10)
-            self.data_ready.emit(self.ticker_symbol, live_price, sofr, dividend, vol)
+                volatility = volatility_future.result(timeout=10)
+            self.data_ready.emit(self.ticker_symbol, live_price, sofr, dividend, volatility)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -207,12 +207,14 @@ class OptionPricingApp(QWidget):
         self.K = None
         self.T = None
         self.option_type = None
-        self.current_sigma = None 
+        self.current_sigma = None
         self._fetch_worker = None
+        self._tabs_missing_data_warn_shown = False
 
         self.init_ui()
 
-    def init_ui(self):
+    def init_ui(self) -> None:
+        """Initialise l'interface utilisateur principale."""
         self.tab_widget = QTabWidget()
         option_calculator_widget = QWidget()
         option_calculator_layout = QHBoxLayout(option_calculator_widget)
@@ -234,7 +236,8 @@ class OptionPricingApp(QWidget):
         self.strike_input.setValidator(QDoubleValidator(0.0, 100000.0, 2))
         control_form_layout.addRow("Prix d'exercice (K):", self.strike_input)
 
-        self.maturity_date_input = QDateEdit(QDate.currentDate().addMonths(3))
+        from utils import get_default_maturity_date
+        self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
         control_form_layout.addRow("Date d'échéance:", self.maturity_date_input)
@@ -371,7 +374,8 @@ class OptionPricingApp(QWidget):
         self._fetch_worker.start()
         return
 
-    def _on_fetch_done(self, ticker, live_price, sofr, dividend, vol, source_tab):
+    def _on_fetch_done(self, ticker: str, live_price: float, sofr: float, dividend: float, volatility: float, source_tab: QWidget) -> None:
+        """Callback appelé lorsque la récupération des données est terminée."""
         # Traiter les résultats reçus depuis le thread worker (éviter 'or' sur des numériques)
         try:
             self.current_ticker = ticker
@@ -384,8 +388,8 @@ class OptionPricingApp(QWidget):
             q_result = dividend if dividend is not None else None
             self.q = q_result if q_result is not None else 0.0
 
-            vol_result = vol if vol is not None else None
-            self.historical_vol = vol_result if vol_result is not None else 0.20
+            volatility_result = volatility if volatility is not None else None
+            self.historical_vol = volatility_result if volatility_result is not None else 0.20
 
             if self.S is None:
                 QMessageBox.warning(self, "Données Manquantes",
@@ -401,6 +405,9 @@ class OptionPricingApp(QWidget):
 
             # Nettoyage du worker
             self._fetch_worker = None
+
+            if self.S is not None:
+                self._tabs_missing_data_warn_shown = False
 
             self.update_all_tabs_financial_data(source_tab)
         except Exception as e:
@@ -444,6 +451,11 @@ class OptionPricingApp(QWidget):
             sigma_to_use, pricing_method_to_use
         )
 
+        # 5b. Onglet Surface IV
+        self.surface_tab.update_financial_params(
+            self.current_ticker, self.S, self.r, self.q,
+        )
+
         # 6. Onglet Stratégies
         self.strategy_tab.update_financial_data(
             self.current_ticker, self.S, self.r, self.q,
@@ -484,7 +496,8 @@ class OptionPricingApp(QWidget):
                 today = date.today()
                 time_difference = closest_date_obj - today
                 self.T = time_difference.days / 365.0
-                if self.T < 0: self.T = 1e-6 
+                if self.T < 0:
+                    self.T = 1e-6
             else:
                 # Calcul basé sur la date du calendrier si pas de chaîne d'options trouvée
                 today = date.today()
@@ -498,20 +511,22 @@ class OptionPricingApp(QWidget):
             if fetched_iv is not None and fetched_iv > 0.001 and market_price is not None:
                 sigma = fetched_iv
                 self.pricing_method = "IV Marché"
-                bs_price = market_price
-                
             else:
                 sigma = self.historical_vol if self.historical_vol is not None and self.historical_vol > 0 else 0.20
                 self.pricing_method = "Vol Historique (Fallback)"
                 
-                bs_price = self.option_models.black_scholes_price(self.S, self.K, self.T, self.r, sigma, self.q, self.option_type)
-                
                 if self.historical_vol is None or self.historical_vol <= 0 or fetched_iv is None:
-                     QMessageBox.information(self, "Volatilité",
-                                         f"L'IV du marché n'est pas disponible. "
-                                         f"Utilisation d'une volatilité ({sigma*100:.2f}%) pour les calculs.")
+                    QMessageBox.information(self, "Volatilité",
+                                          f"L'IV du marché n'est pas disponible. "
+                                          f"Utilisation d'une volatilité ({sigma*100:.2f}%) pour les calculs.")
 
-            self.current_sigma = sigma 
+            # --- VRAI CALCUL THEORIQUE BSM ---
+            # Avant, bs_price = market_price, ce qui faussait la comparaison BSM vs CRR
+            bs_price = self.option_models.black_scholes_price(
+                self.S, self.K, self.T, self.r, sigma, self.q, self.option_type
+            )
+
+            self.current_sigma = sigma
             
             # --- Mise à jour de l'affichage ---
             self.historical_vol_label.setText(f"Utilisée ({self.pricing_method}): {self.current_sigma*100:.2f}%")
@@ -579,7 +594,7 @@ class OptionPricingApp(QWidget):
                 pricing_method_used = "Vol Historique (Fallback)"
             
             # Mise à jour explicite de la volatilité utilisée dans l'affichage CRR
-            self.crr_tab.vol_label.setText(f"{sigma*100:.2f}% ({pricing_method_used})")
+            self.crr_tab.volatility_label.setText(f"{sigma*100:.2f}% ({pricing_method_used})")
 
             # Calcul du prix CRR
             crr_price = self.option_models.cox_ross_rubinstein_price(
@@ -598,6 +613,8 @@ class OptionPricingApp(QWidget):
             self.crr_tab.greeks_table.setItem(0, 2, QTableWidgetItem(f"{greeks.get('theta', 0):.4f}"))
             self.crr_tab.greeks_table.setItem(0, 3, QTableWidgetItem(f"{greeks.get('vega', 0)/100:.4f}"))
             self.crr_tab.greeks_table.setItem(0, 4, QTableWidgetItem(f"{greeks.get('rho', 0):.4f}"))
+
+            self.current_sigma = sigma
 
         except ValueError:
             QMessageBox.warning(self, "Erreur de Saisie", "Veuillez entrer des valeurs numériques/entières valides pour K et N.")
@@ -723,8 +740,8 @@ class OptionPricingApp(QWidget):
             premium = float(bs_price_str.replace('$', '').strip())
 
             if premium <= 0 and position == 'long':
-                 QMessageBox.information(self, "Premium Nul/Négatif",
-                                     "Le prix Black-Scholes calculé (premium) est nul ou négatif pour un achat. ")
+                QMessageBox.information(self, "Premium Nul/Négatif",
+                                        "Le prix Black-Scholes calculé (premium) est nul ou négatif pour un achat. ")
 
             if K <= 0:
                 QMessageBox.warning(self, "Erreur de Strike", "Le prix d'exercice doit être supérieur à 0.")
@@ -748,8 +765,7 @@ class OptionPricingApp(QWidget):
             self._draw_payoff(ax, K, premium, option_type, position)
 
             title_text = f"Payoff de l'Option Européenne {position.capitalize()} {option_type.capitalize()} (K={K:.2f}, Premium={premium:.4f})"
-            if breakeven is not None:
-                title_text += f"\nBreakeven = {breakeven:.2f}"
+            title_text += f"\nBreakeven = {breakeven:.2f}"
             
             ax.set_title(title_text)
             self.canvas.draw()
@@ -855,5 +871,7 @@ class OptionPricingApp(QWidget):
                 )
             
         else:
-            QMessageBox.information(self, "Données Manquantes",
-                                    "Veuillez récupérer les données financières (Ticker, Prix Actuel, Taux Sans Risque, Dividende, Volatilité) dans l'onglet 'Calculateur d'Option' d'abord.")
+            if not self._tabs_missing_data_warn_shown:
+                self._tabs_missing_data_warn_shown = True
+                QMessageBox.information(self, "Données Manquantes",
+                                        "Veuillez récupérer les données financières (Ticker, Prix Actuel, Taux Sans Risque, Dividende, Volatilité) dans l'onglet 'Calculateur d'Option' d'abord.")
