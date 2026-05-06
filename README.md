@@ -8,14 +8,16 @@
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT"></a>
   <img src="https://img.shields.io/badge/status-Active-brightgreen.svg" alt="Active">
   <br>
-  <img src="https://img.shields.io/badge/PyQt5-41CD52?logo=Qt&logoColor=white" alt="PyQt5">
+  <img src="https://img.shields.io/badge/PySide6-41CD52?logo=Qt&logoColor=white" alt="PySide6">
   <img src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?logo=PyTorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/Plotly-%233F4F75.svg?logo=plotly&logoColor=white" alt="Plotly">
+  <img src="https://img.shields.io/badge/NumPy-%23013243.svg?logo=numpy&logoColor=white" alt="NumPy">
+  <img src="https://img.shields.io/badge/pandas-%23150458.svg?logo=pandas&logoColor=white" alt="pandas">
 </p>
 
 <p align="center">
   Application Python complète pour l'évaluation d'options financières vanilles et exotiques.<br>
-  Interface PyQt5 avec données de marché en temps réel, visualisations intégrées.
+  Interface PySide6 avec données de marché en temps réel, visualisations intégrées.
 </p>
 
 ---
@@ -24,14 +26,14 @@
 
 ### Modèles de pricing
 
-| Modèle                              | Type        | Méthode                                 |
-| ------------------------------------ | ----------- | ---------------------------------------- |
-| **Black-Scholes-Merton**       | Européenne | Formule fermée                          |
-| **Cox-Ross-Rubinstein**        | Américaine | Arbre binomial                           |
-| **Barrières** (8 types)       | Exotique    | Rubinstein & Reiner (1991) + Monte Carlo |
-| **Asiatique** (moyenne)        | Exotique    | Monte Carlo                              |
-| **Lookback**                   | Exotique    | Monte Carlo                              |
-| **Digitale / Cash-or-Nothing** | Exotique    | BSM fermée + Monte Carlo                |
+| Modèle                                                      |            Type            |
+| :----------------------------------------------------------- | :------------------------: |
+| **Black-Scholes-Merton**                               |        Européenne        |
+| **Cox-Ross-Rubinstein**                                |        Américaine        |
+| ****Rubinstein & Reiner** (1991) + Monte Carlo** |         Barrières         |
+| **Monte Carlo**                                        |         Asiatique         |
+| **Monte Carlo**                                        |          Lookback          |
+| **BSM fermée + Monte Carlo**                         | Digitale / Cash-or-Nothing |
 
 ### Données de marché en temps réel
 
@@ -153,16 +155,11 @@ venv\Scripts\activate           # Windows
 
 # 3. Dépendances
 pip install -r requirements.txt
-# (Optionnel) Pour utiliser l'onglet Forecast IA :
-# pip install -r requirements_timesfm.txt
 
 # 4. Variables d'environnement
 FRED_API_KEY=VOTRE-CLÉ        # Créer un fichier .env et insérer votre clé API
 
-# 5. Vérification
-python -c "import PyQt5, yfinance, scipy; print('OK')"
-
-# 6. Lancement
+# 5. Lancement
 python main.py
 ```
 
@@ -173,39 +170,46 @@ python main.py
 ```
 option_pricer/
 ├── main.py                       # Point d'entrée
-├── gui_app.py                    # Interface PyQt5 7 onglets
+├── gui_app.py                    # Interface PySide6 — 8 onglets
 ├── option_models.py              # BSM, CRR, Grecs
 ├── exotic_options_models.py      # Barrières, Asiatiques, Lookback, Digitales
 ├── exotic_options_tab.py         # Onglet options exotiques
 ├── strategy_manager.py           # Moteur de calcul des stratégies
 ├── strategy_tab.py               # Onglet stratégies
-├── forecast_tab.py               # Onglet Forecast IA (TimesFM)
+├── forecast_tab.py               # Onglet Forecast IA (TimesFM) — UI
+├── forecast_logic.py             # Logique métier du forecast (découplée)
 ├── data_fetcher.py               # yfinance + FRED API + cache TTL
-├── simulation_tab.py             # Heatmap simulation
-├── volatility_smile_tab.py       # Smile de volatilité
+├── simulation_tab.py             # Onglet Simulation — UI
+├── simulation_logic.py           # Logique heatmap simulation (découplée)
+├── volatility_smile_tab.py       # Onglet Smile de volatilité — UI
+├── volatility_smile_logic.py     # Calcul IV smile (découplé)
 ├── volatility_surface_tab.py     # Surface IV 3D Plotly
 ├── implied_volatility_surface.py # Calcul surface IV
+├── iv_surface_config.py          # Configuration de la surface IV
+├── utils.py                      # Utilitaires partagés (dates, helpers)
 ├── cache.py                      # Cache TTL thread-safe
+├── tests/
+│   ├── conftest.py               # Fixtures pytest
+│   └── test_pricing.py           # Régression BSM, CRR, Grecs, exotiques
 ├── requirements.txt
-├── requirements_timesfm.txt      # Dépendances IA (Google TimesFM)
 └── README.md
 ```
 
 ## Dépendances principales
 
-| Package                 | Usage                                     |
-| ----------------------- | ----------------------------------------- |
-| `PyQt5`               | Interface graphique                       |
-| `PyQtWebEngine`       | Rendu Plotly                              |
-| `yfinance`            | Prix, IV, chaînes d'options              |
-| `matplotlib`          | Graphiques 2D                             |
-| `plotly`              | Surface IV 3D interactive                 |
-| `scipy`               | CDF normale, interpolation, optimisation  |
-| `numpy`               | Calcul numérique                         |
-| `pandas`              | Manipulation de données                  |
-| `requests`            | API FRED                                  |
-| `python-dotenv`       | Variables d'environnement                 |
-| `timesfm` / `torch` | Modèle de prévision IA (Google TimesFM) |
+| Package                     | Usage                                     |
+| --------------------------- | ----------------------------------------- |
+| `PySide6`                 | Interface graphique (Qt6)                 |
+| `yfinance`                | Prix, IV, chaînes d'options              |
+| `matplotlib`              | Graphiques 2D                             |
+| `plotly`                  | Surface IV 3D interactive                 |
+| `scipy`                   | CDF normale, interpolation, optimisation  |
+| `numpy`                   | Calcul numérique                         |
+| `pandas`                  | Manipulation de données                  |
+| `requests`                | API FRED                                  |
+| `python-dotenv`           | Variables d'environnement                 |
+| `pytest` / `pytest-cov` | Tests de régression                      |
+| `timesfm` / `torch`     | Modèle de prévision IA (Google TimesFM) |
 
 ---
 
@@ -215,4 +219,4 @@ MIT voir [`LICENSE`](LICENSE).
 
 ---
 
-*Dernière mise à jour : avril 2026 ajout de l'onglet Forecast IA TimesFM (v2.2)*
+*Dernière mise à jour : mai 2026 : migration PySide6, architecture découplée UI/logique, tests de régression (v2.3)*
