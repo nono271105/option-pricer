@@ -849,7 +849,7 @@ class OptionPricingApp(QWidget):
             ax.legend()
             dialog.fig.tight_layout()
             dialog.canvas.draw()
-            dialog.exec_()
+            dialog.exec()
 
         except ValueError:
             QMessageBox.warning(self, "Erreur de Saisie", "Veuillez entrer des valeurs numériques valides.")
