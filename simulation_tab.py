@@ -1,10 +1,10 @@
 from typing import Optional
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFormLayout, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QDateEdit
+    QPushButton, QFormLayout, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QDateEdit, QAbstractItemView
 )
-from PyQt5.QtGui import QDoubleValidator, QIntValidator, QColor
-from PyQt5.QtCore import QDate, Qt
+from PySide6.QtGui import QDoubleValidator, QIntValidator, QColor
+from PySide6.QtCore import QDate, Qt
 from datetime import date
 
 from option_models import OptionModels
@@ -30,6 +30,8 @@ class CallPriceSimulationTab(QWidget):
         params_group = QGroupBox("Paramètres de la simulation Call Price")
         params_layout = QFormLayout()
 
+        self.company_name_label = QLabel("N/A")
+        params_layout.addRow("Entreprise:", self.company_name_label)
         self.ticker_display_label = QLabel("N/A")
         params_layout.addRow("Ticker Symbole:", self.ticker_display_label)
         self.S_display_label = QLabel("N/A")
@@ -80,9 +82,9 @@ class CallPriceSimulationTab(QWidget):
         results_layout = QVBoxLayout()
 
         self.results_table = QTableWidget()
-        self.results_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.results_table.verticalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.results_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         results_layout.addWidget(self.results_table)
         results_group.setLayout(results_layout)
@@ -100,6 +102,10 @@ class CallPriceSimulationTab(QWidget):
         self.ticker_display_label.setText(self.ticker_symbol if self.ticker_symbol else "N/A")
         self.S_display_label.setText(f"{self.S_current:.2f}" if self.S_current is not None else "N/A")
         self.update_simulation_ranges()
+
+    def update_company_name(self, company_name: str) -> None:
+        """Met à jour le label du nom de l'entreprise."""
+        self.company_name_label.setText(company_name if company_name else "N/A")
 
     def update_simulation_ranges(self):
         if self.historical_vol_current is not None and self.historical_vol_current > 0:
@@ -207,7 +213,7 @@ class CallPriceSimulationTab(QWidget):
                     
                     color = self.get_color_for_value(price, min_price, max_price)
                     item.setBackground(color)
-                    item.setTextAlignment(Qt.AlignCenter) 
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     
                     self.results_table.setItem(i, j, item)
 

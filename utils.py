@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QDate
+from PySide6.QtCore import QDate
 
 def get_default_maturity_date() -> QDate:
     """

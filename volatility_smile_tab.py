@@ -1,12 +1,12 @@
 # volatility_smile_tab.py
 
 from typing import Optional
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QLineEdit,
-    QPushButton, QFormLayout, QMessageBox, QDateEdit
+    QPushButton, QFormLayout, QMessageBox, QDateEdit, QLabel
 )
-from PyQt5.QtCore import QDate
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from PySide6.QtCore import QDate
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from datetime import datetime, date
 
@@ -37,6 +37,9 @@ class VolatilitySmileTab(QWidget):
         # ------------------- INPUT GROUP -------------------
         input_group = QGroupBox("Paramètres du Sourire de Volatilité")
         input_layout = QFormLayout()
+
+        self.company_name_label = QLabel("N/A")
+        input_layout.addRow("Entreprise:", self.company_name_label)
 
         self.ticker_input = QLineEdit()
         self.ticker_input.setPlaceholderText("Ex: AAPL")
@@ -77,6 +80,9 @@ class VolatilitySmileTab(QWidget):
         self.current_r = r if r is not None else 0.05
         self.current_q = q if q is not None else 0.0
 
+    def update_company_name(self, company_name: str) -> None:
+        """Met à jour le label du nom de l'entreprise."""
+        self.company_name_label.setText(company_name if company_name else "N/A")
 
     def plot_volatility_smile(self):
         ticker = self.ticker_input.text().upper().strip()

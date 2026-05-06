@@ -1,13 +1,13 @@
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QComboBox, QFormLayout, QGroupBox, QGridLayout,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit,
-    QTabWidget, QDialog
+    QTabWidget, QDialog, QAbstractItemView
 )
-from PyQt5.QtCore import QDate, QThread, pyqtSignal
-from PyQt5.QtGui import QDoubleValidator, QIntValidator
+from PySide6.QtCore import QDate, QThread, Signal
+from PySide6.QtGui import QDoubleValidator, QIntValidator
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
 from datetime import date, datetime
@@ -107,12 +107,14 @@ class CRRModelTab(QWidget):
         current_data_group = QGroupBox("Données Actuelles")
         current_data_layout = QFormLayout()
         
+        self.company_name_label = QLabel("N/A")
         self.live_price_label = QLabel("N/A")
         self.risk_free_rate_label = QLabel("N/A")
         self.dividend_yield_label = QLabel("N/A")
         self.volatility_label = QLabel("N/A")
         self.crr_price_label = QLabel("N/A")
 
+        current_data_layout.addRow("Entreprise:", self.company_name_label)
         current_data_layout.addRow("Prix Actuel (S):", self.live_price_label)
         current_data_layout.addRow("Taux Sans Risque SOFR (r):", self.risk_free_rate_label)
         current_data_layout.addRow("Rendement Dividende (q):", self.dividend_yield_label)
@@ -125,8 +127,8 @@ class CRRModelTab(QWidget):
         greeks_table_layout = QGridLayout()
         self.greeks_table = QTableWidget(1, 5)
         self.greeks_table.setHorizontalHeaderLabels(["Delta", "Gamma", "Theta (par jour)", "Vega", "Rho"])
-        self.greeks_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.greeks_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.greeks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.greeks_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.greeks_table.cellClicked.connect(lambda row, col: self.app.handle_crr_greek_click(row, col))
 
         for col in range(5):
@@ -160,10 +162,14 @@ class CRRModelTab(QWidget):
             self.volatility_label.setText(f"{sigma_used*100:.2f}% ({pricing_method})")
         else:
             self.volatility_label.setText("N/A")
+    
+    def update_company_name(self, company_name: str) -> None:
+        """Met à jour le label du nom de l'entreprise."""
+        self.company_name_label.setText(company_name if company_name else "N/A")
             
 class FetchDataWorker(QThread):
-    data_ready = pyqtSignal(str, object, object, object, object)
-    error = pyqtSignal(str)
+    data_ready = Signal(str, object, object, object, object, str)
+    error = Signal(str)
 
     def __init__(self, data_fetcher, ticker_symbol):
         super().__init__()
@@ -174,16 +180,18 @@ class FetchDataWorker(QThread):
         """Exécute la récupération des données en arrière-plan."""
         try:
             from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=4) as executor:
+            with ThreadPoolExecutor(max_workers=5) as executor:
                 price_future = executor.submit(self.data_fetcher.get_live_price, self.ticker_symbol)
                 sofr_future = executor.submit(self.data_fetcher.get_sofr_rate)
                 dividend_future = executor.submit(self.data_fetcher.get_dividend_yield, self.ticker_symbol)
                 volatility_future = executor.submit(self.data_fetcher.get_historical_volatility, self.ticker_symbol, "1y")
+                company_name_future = executor.submit(self.data_fetcher.get_company_name, self.ticker_symbol)
                 live_price = price_future.result(timeout=10)
                 sofr = sofr_future.result(timeout=10)
                 dividend = dividend_future.result(timeout=10)
                 volatility = volatility_future.result(timeout=10)
-            self.data_ready.emit(self.ticker_symbol, live_price, sofr, dividend, volatility)
+                company_name = company_name_future.result(timeout=10)
+            self.data_ready.emit(self.ticker_symbol, live_price, sofr, dividend, volatility, company_name or self.ticker_symbol)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -203,6 +211,7 @@ class OptionPricingApp(QWidget):
         self.q = None
         self.historical_vol = None
         self.current_ticker = None
+        self.company_name = None
         self.pricing_method = "N/A"
         self.K = None
         self.T = None
@@ -269,6 +278,8 @@ class OptionPricingApp(QWidget):
 
         current_data_group = QGroupBox("Données Actuelles")
         current_data_layout = QFormLayout()
+        self.company_name_label = QLabel("N/A")
+        current_data_layout.addRow("Entreprise:", self.company_name_label)
         self.live_price_label = QLabel("N/A")
         self.risk_free_rate_label = QLabel("N/A")
         self.dividend_yield_label = QLabel("N/A")
@@ -287,8 +298,8 @@ class OptionPricingApp(QWidget):
         greeks_table_layout = QGridLayout()
         self.greeks_table = QTableWidget(1, 5)
         self.greeks_table.setHorizontalHeaderLabels(["Delta", "Gamma", "Theta (par jour)", "Vega", "Rho"])
-        self.greeks_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.greeks_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.greeks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.greeks_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.greeks_table.cellClicked.connect(self.handle_greek_click)
 
         for col in range(5):
@@ -368,17 +379,18 @@ class OptionPricingApp(QWidget):
         # Lancer un worker dans un QThread pour ne pas bloquer l'UI
         self._fetch_worker = FetchDataWorker(self.data_fetcher, ticker_symbol)
         self._fetch_worker.data_ready.connect(
-            lambda tk, price, sofr, div, vol: self._on_fetch_done(tk, price, sofr, div, vol, source_tab)
+            lambda tk, price, sofr, div, vol, company_name: self._on_fetch_done(tk, price, sofr, div, vol, company_name, source_tab)
         )
         self._fetch_worker.error.connect(lambda msg: self._on_fetch_error(msg, source_tab))
         self._fetch_worker.start()
         return
 
-    def _on_fetch_done(self, ticker: str, live_price: float, sofr: float, dividend: float, volatility: float, source_tab: QWidget) -> None:
+    def _on_fetch_done(self, ticker: str, live_price: float, sofr: float, dividend: float, volatility: float, company_name: str, source_tab: QWidget) -> None:
         """Callback appelé lorsque la récupération des données est terminée."""
         # Traiter les résultats reçus depuis le thread worker (éviter 'or' sur des numériques)
         try:
             self.current_ticker = ticker
+            self.company_name = company_name
 
             self.S = live_price if live_price is not None else None
 
@@ -428,6 +440,7 @@ class OptionPricingApp(QWidget):
         pricing_method_to_use = self.pricing_method if self.pricing_method != "N/A" else "Vol Historique"
         
         # 1. Onglet BSM (Calculateur d'Option)
+        self.company_name_label.setText(self.company_name or self.current_ticker or "N/A")
         self.live_price_label.setText(f"{self.S:.2f}" if self.S is not None else "N/A")
         self.risk_free_rate_label.setText(f"{self.r*100:.2f}%" if self.r is not None else "N/A")
         self.dividend_yield_label.setText(f"{self.q*100:.2f}%" if self.q is not None else "N/A")
@@ -435,13 +448,16 @@ class OptionPricingApp(QWidget):
         
         # 2. Onglet CRR (Modèle CRR)
         self.crr_tab.update_financial_data(self.S, self.r, self.q, sigma_to_use, self.current_ticker, pricing_method_to_use)
+        self.crr_tab.update_company_name(self.company_name or self.current_ticker)
         
         # 3. Onglet Simulation
         self.simulation_tab.update_financial_data(self.current_ticker, self.S, self.r, self.q, sigma_to_use)
+        self.simulation_tab.update_company_name(self.company_name or self.current_ticker)
         
         # 4. Onglet Smile
         self.smile_tab.update_financial_params(self.r, self.q)
         self.smile_tab.update_S(self.S)
+        self.smile_tab.update_company_name(self.company_name or self.current_ticker)
         if self.current_ticker and source_tab != self.smile_tab:
             self.smile_tab.ticker_input.setText(self.current_ticker)
 
@@ -450,23 +466,27 @@ class OptionPricingApp(QWidget):
             self.current_ticker, self.S, self.r, self.q,
             sigma_to_use, pricing_method_to_use
         )
+        self.exotic_tab.update_company_name(self.company_name or self.current_ticker)
 
         # 5b. Onglet Surface IV
         self.surface_tab.update_financial_params(
             self.current_ticker, self.S, self.r, self.q,
         )
+        self.surface_tab.update_company_name(self.company_name or self.current_ticker)
 
         # 6. Onglet Stratégies
         self.strategy_tab.update_financial_data(
             self.current_ticker, self.S, self.r, self.q,
             sigma_to_use, pricing_method_to_use
         )
+        self.strategy_tab.update_company_name(self.company_name or self.current_ticker)
 
         # 7. Onglet Forecast TimesFM
         if hasattr(self, 'forecast_tab'):
             self.forecast_tab.update_financial_params(
                 self.current_ticker, self.S, self.r, self.q, sigma_to_use
             )
+            self.forecast_tab.update_company_name(self.company_name or self.current_ticker)
         
 
     def calculate_option_metrics(self):
@@ -722,7 +742,7 @@ class OptionPricingApp(QWidget):
         ax.grid(True)
         ax.legend()
         dialog.canvas.draw()
-        dialog.exec_()
+        dialog.exec()
 
 
     def plot_option_payoff(self):

@@ -3,13 +3,13 @@ Onglet pour la visualisation 3D de la surface de volatilité implicite avec Plot
 """
 
 from typing import Optional
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFormLayout, QGroupBox, QMessageBox, QProgressBar
 )
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QThread, pyqtSignal, QUrl
-from PyQt5.QtGui import QDoubleValidator
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtCore import QThread, Signal, QUrl
+from PySide6.QtGui import QDoubleValidator
 import plotly.graph_objects as go
 from datetime import datetime
 
@@ -19,9 +19,9 @@ from implied_volatility_surface import ImpliedVolatilitySurface
 class SurfaceCalculationThread(QThread):
     """Thread pour calculer la surface IV sans bloquer l'UI."""
 
-    finished = pyqtSignal()
-    error    = pyqtSignal(str)
-    progress = pyqtSignal(int)
+    finished = Signal()
+    error    = Signal(str)
+    progress = Signal(int)
 
     def __init__(
         self,
@@ -84,6 +84,9 @@ class VolatilitySurfaceTab(QWidget):
         # ── Panneau de contrôle ────────────────────────────────────────────
         control_group  = QGroupBox("Paramètres de la Surface IV")
         control_layout = QFormLayout()
+
+        self.company_name_label = QLabel("N/A")
+        control_layout.addRow("Entreprise:", self.company_name_label)
 
         self.ticker_input = QLineEdit("AAPL")
         self.ticker_input.setPlaceholderText("Ex: AAPL, MSFT, TSLA")
@@ -378,3 +381,7 @@ class VolatilitySurfaceTab(QWidget):
             self.current_rate = r
         if q is not None:
             self.current_dividend = q
+
+    def update_company_name(self, company_name: str) -> None:
+        """Met à jour le label du nom de l'entreprise."""
+        self.company_name_label.setText(company_name if company_name else "N/A")

@@ -1,24 +1,23 @@
+# Dépendances principales
 yfinance
 requests
 python-dotenv
 pandas
 numpy
-PyQt5
-PyQtWebEngine
+PySide6
 matplotlib
 scipy
 plotly
 
-# Dépendances supplémentaires pour l'onglet Forecast TimesFM
-# 
-# 1. Installer torch en premier (CPU only) :
-#    pip install torch --index-url https://download.pytorch.org/whl/cpu
-#
-# 2. Installer timesfm depuis GitHub (pas disponible sur PyPI en v2.5) :
-timesfm @ git+https://github.com/google-research/timesfm.git
-#
-# 3. Installer huggingface_hub :
-#    pip install huggingface_hub
+# Tests
+pytest
+pytest-cov
 
+# PyTorch (CPU uniquement)
 torch
+
+# Hugging Face Hub
 huggingface_hub>=0.20.0
+
+# TimesFM (installation depuis GitHub)
+timesfm @ git+https://github.com/google-research/timesfm.git

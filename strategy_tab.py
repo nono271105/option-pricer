@@ -19,17 +19,17 @@ import numpy as np
 from typing import Optional, List, Dict
 from datetime import date, datetime
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox,
     QFormLayout, QGroupBox, QGridLayout,
     QMessageBox, QDateEdit, QSizePolicy,
-    QTableWidget, QTableWidgetItem, QHeaderView,
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QDate
-from PyQt5.QtGui import QColor
+from PySide6.QtCore import Qt, QThread, Signal, QDate
+from PySide6.QtGui import QColor
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.gridspec as gridspec
 
@@ -44,8 +44,8 @@ from strategy_manager import StrategyManager
 
 class StrategyWorker(QThread):
     """Récupère les primes de marché et calcule toutes les métriques."""
-    result_ready   = pyqtSignal(object)   # dict de résultats
-    error_occurred = pyqtSignal(str)
+    result_ready   = Signal(object)   # dict de résultats
+    error_occurred = Signal(str)
 
     def __init__(self, params: dict, manager: StrategyManager,
                  option_models: OptionModels, data_fetcher: DataFetcher):
@@ -99,7 +99,7 @@ class StrategyCanvas(FigureCanvas):
         self.fig = Figure(figsize=(10, 6))
         super().__init__(self.fig)
         self.setParent(parent)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._build_axes()
 
     def _build_axes(self):
@@ -230,11 +230,14 @@ class StrategyTab(QWidget):
         # Groupe Stratégie 
         strat_group = QGroupBox("Paramètres de la stratégie")
         strat_form  = QFormLayout()
-        strat_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        strat_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.ticker_input = QLineEdit()
         self.ticker_input.setPlaceholderText("Ex: AAPL")
         strat_form.addRow("Ticker Symbole:", self.ticker_input)
+
+        self.company_name_label = QLabel("N/A")
+        strat_form.addRow("Entreprise:", self.company_name_label)
 
         self.family_combo = QComboBox()
         self.family_combo.addItems(list(self.FAMILIES.keys()))
@@ -267,8 +270,8 @@ class StrategyTab(QWidget):
         legs_layout = QVBoxLayout(legs_group)
         self.legs_table = QTableWidget(0, 4)
         self.legs_table.setHorizontalHeaderLabels(["Type", "Position", "Strike", "Prime ($)"])
-        self.legs_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.legs_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.legs_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.legs_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.legs_table.setMaximumHeight(160)
         legs_layout.addWidget(self.legs_table)
         left_layout.addWidget(legs_group)
@@ -329,8 +332,8 @@ class StrategyTab(QWidget):
         self.greeks_table = QTableWidget(1, 5)
         self.greeks_table.setHorizontalHeaderLabels(
             ["Delta (Δ)", "Gamma (Γ)", "Theta (Θ/j)", "Vega (ν)", "Rho (ρ)"])
-        self.greeks_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.greeks_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.greeks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.greeks_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.greeks_table.setMaximumHeight(58)
         for col in range(5):
             self.greeks_table.setItem(0, col, QTableWidgetItem("N/A"))
@@ -394,6 +397,10 @@ class StrategyTab(QWidget):
 
         self.fetch_data_button.setEnabled(True)
         self.fetch_data_button.setText("Récupérer/Synchroniser les Données")
+
+    def update_company_name(self, company_name: str) -> None:
+        """Met à jour le label du nom de l'entreprise."""
+        self.company_name_label.setText(company_name if company_name else "N/A")
 
     # =========================================================================
     # Lancement du calcul
@@ -467,7 +474,7 @@ class StrategyTab(QWidget):
             pos_item.setBackground(bg_pos)
 
             for item in (type_item, pos_item, k_item, p_item):
-                item.setTextAlignment(Qt.AlignCenter)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
             self.legs_table.setItem(row, 0, type_item)
             self.legs_table.setItem(row, 1, pos_item)
@@ -502,7 +509,7 @@ class StrategyTab(QWidget):
         for col, key in enumerate(greek_keys):
             val = greeks.get(key, 0)
             item = QTableWidgetItem(f"{val:.4f}")
-            item.setTextAlignment(Qt.AlignCenter)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if key in ("delta", "theta", "rho"):
                 item.setForeground(QColor("#3B6D11") if val >= 0 else QColor("#A32D2D"))
             self.greeks_table.setItem(0, col, item)

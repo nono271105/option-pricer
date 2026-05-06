@@ -10,15 +10,15 @@ import numpy as np
 from datetime import date
 from typing import Optional
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QComboBox, QFormLayout, QGroupBox,
     QMessageBox, QDateEdit, QSpinBox, QProgressBar
 )
-from PyQt5.QtCore import QDate, QThread, pyqtSignal, Qt
-from PyQt5.QtGui import QDoubleValidator
+from PySide6.QtCore import QDate, QThread, Signal, Qt
+from PySide6.QtGui import QDoubleValidator
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from option_models import OptionModels
@@ -40,8 +40,8 @@ class ForecastWorker(QThread):
         error(str):
             Émet un message d'erreur en cas d'échec.
     """
-    finished = pyqtSignal(object, object, object)
-    error = pyqtSignal(str)
+    finished = Signal(object, object, object)
+    error = Signal(str)
 
     def __init__(self, ticker: str, horizon: int, forecast_logic: ForecastLogic, parent=None):
         super().__init__(parent)
@@ -107,6 +107,10 @@ class ForecastTimesFMTab(QWidget):
         self.ticker_input.setPlaceholderText("Ex : AAPL")
         form.addRow("Ticker :", self.ticker_input)
 
+        # Entreprise
+        self.company_name_label = QLabel("N/A")
+        form.addRow("Entreprise :", self.company_name_label)
+
         # Horizon (5 – 63 jours)
         self.horizon_spin = QSpinBox()
         self.horizon_spin.setRange(5, 63)
@@ -143,7 +147,7 @@ class ForecastTimesFMTab(QWidget):
 
         # Label de statut
         self.status_label = QLabel("En attente…")
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setStyleSheet(
             "font-weight: bold; padding: 6px; border-radius: 4px;"
         )
@@ -199,6 +203,10 @@ class ForecastTimesFMTab(QWidget):
         if sigma is not None:
             self.sigma = sigma
             self.sigma_label.setText(f"{sigma*100:.2f} %")
+
+    def update_company_name(self, company_name: str) -> None:
+        """Met à jour le label du nom de l'entreprise."""
+        self.company_name_label.setText(company_name if company_name else "N/A")
 
     # --------------------------------------------------------- Lancement
     def on_launch(self):

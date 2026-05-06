@@ -1,7 +1,7 @@
 """
 exotic_options_tab.py
 ---------------------
-Onglet PyQt5 "Options Exotiques" — style identique aux onglets BSM et CRR.
+Onglet PySide6 "Options Exotiques" — style identique aux onglets BSM et CRR.
 
 Structure :
   - Panneau gauche  : QFormLayout dans QGroupBox (ticker, paramètres, boutons)
@@ -17,16 +17,16 @@ import numpy as np
 from typing import Optional
 from datetime import date, datetime
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox,
     QFormLayout, QGroupBox,
     QMessageBox, QDateEdit, QSizePolicy,
 )
-from PyQt5.QtCore import QThread, pyqtSignal, QDate
-from PyQt5.QtGui import QDoubleValidator, QIntValidator
+from PySide6.QtCore import QThread, Signal, QDate
+from PySide6.QtGui import QDoubleValidator, QIntValidator
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.gridspec as gridspec
 
@@ -45,8 +45,8 @@ from exotic_options_models import (
 # =============================================================================
 
 class PricingWorker(QThread):
-    result_ready   = pyqtSignal(object, object)   # (ana: ExoticResult, mc: ExoticResult)
-    error_occurred = pyqtSignal(str)
+    result_ready   = Signal(object, object)   # (ana: ExoticResult, mc: ExoticResult)
+    error_occurred = Signal(str)
 
     def __init__(self, params: dict):
         super().__init__()
@@ -105,7 +105,7 @@ class ExoticCanvas(FigureCanvas):
         self.fig = Figure(figsize=(10, 7))
         super().__init__(self.fig)
         self.setParent(parent)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._build_axes()
 
     def _build_axes(self):
@@ -293,11 +293,14 @@ class ExoticOptionsTab(QWidget):
         # --- Groupe paramètres principaux ---
         params_group = QGroupBox("Paramètres de l'option exotique")
         form = QFormLayout()
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.ticker_input = QLineEdit()
         self.ticker_input.setPlaceholderText("Ex: AAPL")
         form.addRow("Ticker Symbole:", self.ticker_input)
+
+        self.company_name_label = QLabel("N/A")
+        form.addRow("Entreprise:", self.company_name_label)
 
         self.exotic_combo = QComboBox()
         self.exotic_combo.addItems([
@@ -333,7 +336,7 @@ class ExoticOptionsTab(QWidget):
         # --- Groupe paramètres spécifiques (conditionnel) ---
         self.specific_group = QGroupBox("Paramètres spécifiques")
         self.specific_form  = QFormLayout()
-        self.specific_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        self.specific_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         # Widgets barrière
         self.barrier_input = QLineEdit("120.00")
@@ -355,7 +358,7 @@ class ExoticOptionsTab(QWidget):
         # --- Groupe Monte Carlo ---
         mc_group = QGroupBox("Monte Carlo")
         mc_form  = QFormLayout()
-        mc_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        mc_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.nsims_input = QLineEdit("50000")
         self.nsims_input.setValidator(QIntValidator(1000, 500000))
@@ -533,6 +536,10 @@ class ExoticOptionsTab(QWidget):
                     self.barrier_input.setText(f"{S * 1.20:.2f}")
             except ValueError:
                 pass
+
+    def update_company_name(self, company_name: str) -> None:
+        """Met à jour le label du nom de l'entreprise."""
+        self.company_name_label.setText(company_name if company_name else "N/A")
 
     # =========================================================================
     # Collecte des paramètres

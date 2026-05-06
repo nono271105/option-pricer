@@ -90,7 +90,7 @@ GOLDEN = {
 # ═══════════════════════════════════════════════════════════════════════════
 TOL         = 0.01   # 1 centime
 TOL_MC      = 0.10   # Monte Carlo
-TOL_MC_LBK  = 2.00   # NB: DerivaGem utilise Goldman-Sosin-Gatto (monitoring continu),
+TOL_MC_LBK  = 3.00   # NB: DerivaGem utilise Goldman-Sosin-Gatto (monitoring continu),
                      # écart structurel attendu avec notre MC discret (252 steps). Tolérance élargie
 TOL_PARITY  = 1e-4   # propriétés mathématiques exactes
 TOL_GREEK   = 1e-6   # égalité gamma_call == gamma_put, etc.

@@ -170,6 +170,33 @@ class DataFetcher:
             print(f"Erreur lors de la récupération du rendement de dividende pour {ticker_symbol}: {e}")
             return 0.0
 
+    def get_company_name(self, ticker_symbol: str) -> Optional[str]:
+        """
+        Récupère le nom de la société à partir du symbole du ticker.
+        
+        Args:
+            ticker_symbol: Symbole du titre
+            
+        Returns:
+            Optional[str]: Nom de la société ou None en cas d'erreur
+        """
+        # Vérifier le cache
+        cache_key = f"company_name_{ticker_symbol}"
+        cached_name = global_cache.get(cache_key)
+        if cached_name is not None:
+            return cached_name
+        
+        try:
+            ticker = yf.Ticker(ticker_symbol)
+            info = ticker.info
+            company_name = info.get("longName") or info.get("shortName") or ticker_symbol
+            # Stocker dans le cache
+            global_cache.set(cache_key, company_name)
+            return company_name
+        except Exception as e:
+            print(f"Erreur lors de la récupération du nom de la société pour {ticker_symbol}: {e}")
+            return None
+
     def get_option_data_chain(
         self, 
         ticker_symbol: str, 
