@@ -444,7 +444,7 @@ class OptionPricingApp(QWidget):
         self.live_price_label.setText(f"{self.S:.2f}" if self.S is not None else "N/A")
         self.risk_free_rate_label.setText(f"{self.r*100:.2f}%" if self.r is not None else "N/A")
         self.dividend_yield_label.setText(f"{self.q*100:.2f}%" if self.q is not None else "N/A")
-        self.historical_vol_label.setText(f"Historique: {(self.historical_vol or 0.0)*100:.2f}%")
+        self.historical_vol_label.setText(f"{pricing_method_to_use}: {sigma_to_use*100:.2f}%")
         
         # 2. Onglet CRR (Modèle CRR)
         self.crr_tab.update_financial_data(self.S, self.r, self.q, sigma_to_use, self.current_ticker, pricing_method_to_use)
@@ -564,10 +564,8 @@ class OptionPricingApp(QWidget):
             self.greeks_table.setItem(0, 3, QTableWidgetItem(f"{greeks.get('vega', 0)/100:.4f}")) 
             self.greeks_table.setItem(0, 4, QTableWidgetItem(f"{greeks.get('rho', 0):.4f}"))
 
-            # Mettre à jour les données pour les autres onglets
-            # On utilise le `self.pricing_method` mis à jour pour les autres onglets
-            self.simulation_tab.update_financial_data(self.current_ticker, self.S, self.r, self.q, self.current_sigma)
-            self.crr_tab.update_financial_data(self.S, self.r, self.q, self.current_sigma, self.current_ticker, self.pricing_method) 
+            # Mettre à jour les données pour tous les onglets avec la nouvelle volatilité
+            self.update_all_tabs_financial_data()
         
         except ValueError:
             QMessageBox.warning(self, "Erreur de Saisie", "Veuillez entrer des valeurs numériques valides pour K.")
@@ -635,6 +633,8 @@ class OptionPricingApp(QWidget):
             self.crr_tab.greeks_table.setItem(0, 4, QTableWidgetItem(f"{greeks.get('rho', 0):.4f}"))
 
             self.current_sigma = sigma
+            self.pricing_method = pricing_method_used
+            self.update_all_tabs_financial_data()
 
         except ValueError:
             QMessageBox.warning(self, "Erreur de Saisie", "Veuillez entrer des valeurs numériques/entières valides pour K et N.")
@@ -888,6 +888,11 @@ class OptionPricingApp(QWidget):
                 self.forecast_tab.update_financial_params(
                     self.current_ticker, self.S, self.r, self.q,
                     sigma_to_use
+                )
+
+            elif index == self.tab_widget.indexOf(self.surface_tab):
+                self.surface_tab.update_financial_params(
+                    self.current_ticker, self.S, self.r, self.q
                 )
             
         else:

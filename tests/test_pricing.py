@@ -1,17 +1,5 @@
-# test_pricing.py : Tests de régression pricing Option Pricer
+# Commande : pytest tests/test_pricing.py -v
 # Golden values : DerivaGem (John Hull)
-#
-# ÉTAPE 1 : Vérifier compilation :
-#   pytest tests/test_pricing.py -v -s --co
-#
-# ÉTAPE 2 : Tests rapides (sans MC) :
-#   pytest tests/test_pricing.py -m "not slow" -v
-#
-# ÉTAPE 3 : Suite complète :
-#   pytest tests/test_pricing.py -v
-#
-# Si un test échoue après modification du code :
-#   Le message d'erreur affiche : expected=X.XXXX, got=Y.YYYY, diff=Z.ZZZZ, pct=P.PP%
 
 import os
 import sys

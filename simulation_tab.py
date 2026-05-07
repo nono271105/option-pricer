@@ -163,12 +163,21 @@ class CallPriceSimulationTab(QWidget):
                 QMessageBox.warning(self, "Erreur de Maturité", "La date d'échéance doit être dans le futur.")
                 return
 
-            vol_min = int(self.vol_min_display.text())
-            vol_max = int(self.vol_max_display.text())
+            vol_min_txt = self.vol_min_display.text()
+            vol_max_txt = self.vol_max_display.text()
+            underlying_min_txt = self.underlying_min_display.text()
+            underlying_max_txt = self.underlying_max_display.text()
+
+            if "N/A" in [vol_min_txt, vol_max_txt, underlying_min_txt, underlying_max_txt]:
+                QMessageBox.warning(self, "Données Manquantes", "Certains paramètres de plage sont à 'N/A'. Veuillez récupérer les données d'abord.")
+                return
+
+            vol_min = int(vol_min_txt)
+            vol_max = int(vol_max_txt)
             vol_step = int(self.vol_step_input.text())
 
-            underlying_min = int(self.underlying_min_display.text())
-            underlying_max = int(self.underlying_max_display.text())
+            underlying_min = int(underlying_min_txt)
+            underlying_max = int(underlying_max_txt)
             underlying_step = int(self.underlying_step_input.text())
 
             if not (vol_min <= vol_max and vol_step >= 1):

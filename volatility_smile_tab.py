@@ -93,17 +93,23 @@ class VolatilitySmileTab(QWidget):
             return
         
         try:
-            # 1. Récupération du prix actuel
-            current_price = self.data_fetcher.get_live_price(ticker)
-            if current_price is None or current_price <= 0:
-                QMessageBox.warning(self, "Erreur", "Impossible de récupérer le prix actuel.")
-                return
-            
-            self.current_S = current_price
+            # 1. Utilisation des données déjà synchronisées si disponibles, sinon fetch
+            if self.current_S is not None and self.current_S > 0:
+                current_price = self.current_S
+            else:
+                current_price = self.data_fetcher.get_live_price(ticker)
+                if current_price is None or current_price <= 0:
+                    QMessageBox.warning(self, "Erreur", "Impossible de récupérer le prix actuel.")
+                    return
+                self.current_S = current_price
 
-            # 2. Récupération de r et q
-            self.current_r = self.data_fetcher.get_sofr_rate() or 0.05
-            self.current_q = self.data_fetcher.get_dividend_yield(ticker) or 0.0
+            # 2. Récupération de r et q (fallback si non synchronisés)
+            # On privilégie les valeurs passées par l'app principale
+            r_to_use = self.current_r if self.current_r is not None else (self.data_fetcher.get_sofr_rate() or 0.05)
+            q_to_use = self.current_q if self.current_q is not None else (self.data_fetcher.get_dividend_yield(ticker) or 0.0)
+            
+            self.current_r = r_to_use
+            self.current_q = q_to_use
 
             # 3. Récupération de la chaîne d'options
             maturity_date = datetime.strptime(maturity_date_str, "%Y-%m-%d").date()
