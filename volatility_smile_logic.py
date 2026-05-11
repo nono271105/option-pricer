@@ -85,7 +85,10 @@ class VolatilitySmileLogic:
         ivs = smile_df['iv'].values * 100
 
         strikes_interp = np.linspace(strikes.min(), strikes.max(), 200)
-        f_interp = interp1d(strikes, ivs, kind='linear', fill_value='extrapolate')
+        if len(strikes) >= 4:
+            f_interp = interp1d(strikes, ivs, kind='cubic', fill_value='extrapolate')
+        else:
+            f_interp = interp1d(strikes, ivs, kind='linear', fill_value='extrapolate')
         ivs_interp = f_interp(strikes_interp)
 
         return strikes_interp, ivs_interp, smile_df

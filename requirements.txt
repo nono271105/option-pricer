@@ -13,11 +13,11 @@ plotly
 pytest
 pytest-cov
 
-# PyTorch (CPU uniquement)
-torch
+# PyTorch (CPU uniquement) : version épinglée pour reproductibilité
+torch==2.5.1
 
 # Hugging Face Hub
 huggingface_hub>=0.20.0
 
-# TimesFM (installation depuis GitHub)
-timesfm @ git+https://github.com/google-research/timesfm.git
+# TimesFM : release stable PyPI (v1.2.6) avec backend PyTorch
+timesfm[torch]==1.2.6

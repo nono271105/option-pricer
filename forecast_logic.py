@@ -3,7 +3,10 @@ Logique métier pour le forecast TimesFM et le repricing BSM associé.
 """
 
 import numpy as np
+import logging
 from typing import Tuple
+
+logger = logging.getLogger(__name__)
 
 class ForecastLogic:
     """Logique pour générer des prévisions avec TimesFM et repricer l'option."""
@@ -16,8 +19,15 @@ class ForecastLogic:
         Exécute l'inférence TimesFM.
         ATTENTION : Cette méthode doit être appelée dans un thread séparé pour ne pas bloquer l'UI.
         """
+        import torch
         import yfinance as yf
         import timesfm
+
+        # Détection automatique du device (TimesFM le gère nativement en interne)
+        if torch.cuda.is_available():
+            logger.info("[Forecast] CUDA détecté — TimesFM utilisera le GPU (%s).", torch.cuda.get_device_name(0))
+        else:
+            logger.info("[Forecast] CUDA non disponible — TimesFM utilisera le CPU.")
 
         tk = yf.Ticker(ticker)
         hist = tk.history(period="1y")
