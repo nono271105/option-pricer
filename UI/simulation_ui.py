@@ -1,3 +1,8 @@
+"""
+UI/simulation_ui.py
+Onglet Call Price Simulation
+"""
+
 from typing import Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit,

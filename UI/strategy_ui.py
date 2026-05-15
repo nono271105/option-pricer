@@ -1,16 +1,6 @@
 """
-strategy_tab.py
----------------
-Onglet "Stratégies"
-Panneau gauche  : famille → stratégie → ticker → date → fetch → legs auto-générés
-Panneau droit   : 5 métriques + 2 graphiques (payoff maturité + valeur today) + grecs agrégés
-Nouvelles méthodes utilisées depuis strategy_manager.py :
-    build_legs()          — construit les legs selon la stratégie choisie
-    fetch_leg_premiums()  — récupère les primes via yfinance (fallback BSM)
-    compute_metrics()     — coût, gain max, perte max, breakevens
-    compute_payoff()      — P&L à maturité
-    compute_value_today() — valeur actuelle avec valeur temps
-    compute_greeks()      — grecs agrégés de tous les legs
+UI/strategy_ui.py
+Onglet Stratégies
 """
 
 from __future__ import annotations

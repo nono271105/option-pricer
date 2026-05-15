@@ -1,14 +1,6 @@
 """
 exotic_options_tab.py
----------------------
-Onglet PySide6 "Options Exotiques" — style identique aux onglets BSM et CRR.
-
-Structure :
-  - Panneau gauche  : QFormLayout dans QGroupBox (ticker, paramètres, boutons)
-  - Panneau droit   : "Données Actuelles" + tableau résultats + graphique Matplotlib
-  - Connexion yfinance via DataFetcher (même appel que les autres onglets)
-  - Calcul en QThread (pas de freeze UI)
-  - Monte Carlo : trajectoires GBM affichées sur le graphique principal
+Onglet PySide6 "Options Exotiques"
 """
 
 from __future__ import annotations

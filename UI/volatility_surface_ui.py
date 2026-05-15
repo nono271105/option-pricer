@@ -1,5 +1,6 @@
 """
-Onglet pour la visualisation 3D de la surface de volatilité implicite avec Plotly.
+UI/volatility_surface_ui.py
+Onglet Surface de volatilité
 """
 
 from typing import Optional

@@ -1,9 +1,6 @@
 """
-Onglet Forecast TimesFM : prévision du prix sous-jacent via TimesFM 2.5-200M
-et repricing BSM jour par jour sur l'horizon de forecast.
-
-Le modèle TimesFM (~800 MB) est importé dans le QThread pour ne pas bloquer
-le démarrage de l'application.
+UI/forecast_ui.py
+Onglet Forecast TimesFM
 """
 
 import numpy as np

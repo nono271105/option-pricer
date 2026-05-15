@@ -1,4 +1,7 @@
-# volatility_smile_tab.py
+"""
+UI/volatility_smile_ui.py
+Onglet Smile
+"""
 
 from typing import Optional
 from PySide6.QtWidgets import (

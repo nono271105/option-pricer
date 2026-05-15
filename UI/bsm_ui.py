@@ -1,7 +1,6 @@
 """
-UI/bsm_ui.py — Onglet BSM (Black-Scholes-Merton)
-Extrait de gui_app.py : panneau contrôle BSM + panneau affichage BSM
-+ calculate_option_metrics, plot_option_payoff, handle_greek_click, plot_greek_evolution
+UI/bsm_ui.py
+Onglet BSM (Black-Scholes-Merton)
 """
 
 from __future__ import annotations
@@ -199,7 +198,7 @@ class BSMTab(QWidget):
         self.fetch_data_button.setText("Récupérer les Données")
 
     # =========================================================================
-    # calculate_option_metrics — inchangé algorithmiquement
+    # calculate_option_metrics 
     # =========================================================================
 
     def calculate_option_metrics(self):
@@ -276,7 +275,7 @@ class BSMTab(QWidget):
             QMessageBox.critical(self, "Erreur de Calcul", f"Une erreur inattendue est survenue: {e}")
 
     # =========================================================================
-    # _draw_payoff — utilitaire partagé (copié dans CRRModelTab aussi)
+    # _draw_payoff  utilitaire partagé 
     # =========================================================================
 
     def _draw_payoff(self, ax, K, premium, option_type, position):
@@ -345,7 +344,7 @@ class BSMTab(QWidget):
             QMessageBox.critical(self, "Erreur de Tracé", f"Une erreur est survenue lors du tracé du payoff: {e}")
 
     # =========================================================================
-    # Greek evolution
+    # Greek évolution
     # =========================================================================
 
     def handle_greek_click(self, row, column):

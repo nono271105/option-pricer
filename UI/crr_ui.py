@@ -1,7 +1,6 @@
 """
-UI/crr_ui.py — Onglet CRR (Cox-Ross-Rubinstein)
-Extrait de gui_app.py : CRRModelTab + calculate_crr_metrics, plot_crr_payoff,
-handle_crr_greek_click, plot_crr_greek_evolution, _draw_payoff
+UI/crr_ui.py 
+Onglet CRR (Cox-Ross-Rubinstein)
 """
 
 from __future__ import annotations
