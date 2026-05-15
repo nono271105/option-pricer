@@ -1,8 +1,7 @@
 # Commande : pytest tests/test_app.py -v
+
 """
 test_app.py : Tests unitaires pour tous les modules non-pricing.
-Couvre : cache, utils, data_fetcher, strategy_manager (payoff / métriques),
-         simulation_logic, forecast_logic, volatility_smile_logic.
 """
 
 import sys, os, time, threading
