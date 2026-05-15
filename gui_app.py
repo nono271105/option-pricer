@@ -1,7 +1,6 @@
 """
-gui_app.py — Orchestrateur pur.
+gui_app.py
 Instancie le MarketDataStore, les 8 tabs UI, et le QTabWidget.
-Toute la logique métier est dans logic/, toute l'UI dans UI/.
 """
 
 from PySide6.QtWidgets import (
