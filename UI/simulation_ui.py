@@ -7,8 +7,8 @@ from PySide6.QtGui import QDoubleValidator, QIntValidator, QColor
 from PySide6.QtCore import QDate, Qt
 from datetime import date
 
-from option_models import OptionModels
-from simulation_logic import SimulationLogic
+from logic.bsm_logic import OptionModels
+from logic.simulation_logic import SimulationLogic
 class CallPriceSimulationTab(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)

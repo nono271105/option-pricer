@@ -169,31 +169,56 @@ python main.py
 
 ```
 option_pricer/
-├── main.py                       # Point d'entrée
-├── gui_app.py                    # Interface PySide6 — 8 onglets
-├── option_models.py              # BSM, CRR, Grecs
-├── exotic_options_models.py      # Barrières, Asiatiques, Lookback, Digitales
-├── exotic_options_tab.py         # Onglet options exotiques
-├── strategy_manager.py           # Moteur de calcul des stratégies
-├── strategy_tab.py               # Onglet stratégies
-├── forecast_tab.py               # Onglet Forecast IA (TimesFM) — UI
-├── forecast_logic.py             # Logique métier du forecast (découplée)
-├── data_fetcher.py               # yfinance + FRED API + cache TTL
-├── simulation_tab.py             # Onglet Simulation — UI
-├── simulation_logic.py           # Logique heatmap simulation (découplée)
-├── volatility_smile_tab.py       # Onglet Smile de volatilité — UI
-├── volatility_smile_logic.py     # Calcul IV smile (découplé)
-├── volatility_surface_tab.py     # Surface IV 3D Plotly
-├── implied_volatility_surface.py # Calcul surface IV
-├── iv_surface_config.py          # Configuration de la surface IV
-├── utils.py                      # Utilitaires partagés (dates, helpers)
-├── cache.py                      # Cache TTL thread-safe
-├── tests/
-│   ├── conftest.py               # Fixtures pytest
-│   └── test_pricing.py           # Régression BSM, CRR, Grecs, exotiques
+├── main.py                           # Point d'entrée
+├── gui_app.py                        # Interface PySide6
+├── market_data_store.py              # Store pub/sub centralisé : synchronisation entre onglets
+├── data_fetcher.py                   # yfinance + FRED API
+├── cache.py                          # Cache TTL thread-safe
+├── utils.py                          # Utilitaires partagés
+│
+├── UI/                               # Modules d'interface utilisateur (PySide6)
+│   ├── __init__.py
+│   ├── bsm_ui.py                     # Onglet Black-Scholes 
+│   ├── crr_ui.py                     # Onglet Cox-Ross-Rubinstein 
+│   ├── exotic_options_ui.py          # Onglet Options exotiques
+│   ├── forecast_ui.py                # Onglet Forecast TimesFM 
+│   ├── simulation_ui.py              # Onglet Simulation
+│   ├── strategy_ui.py                # Onglet Stratégies multi-legs
+│   ├── volatility_smile_ui.py        # Onglet Smile de volatilité
+│   └── volatility_surface_ui.py      # Onglet Surface IV 3D
+│
+├── logic/                            # Modules de logique métier
+│   ├── __init__.py                
+│   ├── bsm_logic.py                  # Modèle Black-Scholes + Grecs
+│   ├── crr_logic.py                  # Modèle Cox-Ross-Rubinstein + Grecs
+│   ├── exotic_options_logic.py       # Barrières, Asiatiques, Lookback, Digitales
+│   ├── forecast_logic.py             # Moteur TimesFM
+│   ├── simulation_logic.py           # Calcul heatmap
+│   ├── strategy_logic.py             # Moteur de calcul des 22 stratégies
+│   ├── volatility_smile_logic.py     # Calcul IV smile 
+│   └── volatility_surface_logic.py   # Surface IV 3D
+│
+├── tests/                            # Tests de régression
+│   ├── conftest.py                   # Fixtures pytest
+│   ├── test_app.py                   # Tests interface
+│   └── test_pricing.py               # Régression BSM, CRR, Grecs, exotiques
+│
 ├── requirements.txt
 └── README.md
 ```
+
+### Patterns et Architecture
+
+**1. MarketDataStore (Pub/Sub)**
+Chaque onglet s'abonne automatiquement aux mises à jour du store centralisé. Les données (S, r, q, σ, ticker) sont synchronisées une seule fois à la source et propagées en temps réel aux 8 onglets.
+
+**2. Séparation UI / Logique**
+- `UI/*.py` : interaction PySide6, validation des inputs, affichage graphique
+- `logic/*.py` : calculs purs (BSM, CRR, grecs, stratégies), aucune dépendance Qt
+- Facilite les tests unitaires et la réutilisabilité du code métier
+
+**3. QThread Worker Pattern**
+Calculs lourds (CRR, Monte Carlo, TimesFM, surface IV) exécutés en arrière-plan sans bloquer l'UI.
 
 ## Dépendances principales
 

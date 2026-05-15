@@ -13,7 +13,7 @@ from PySide6.QtGui import QDoubleValidator
 import plotly.graph_objects as go
 from datetime import datetime
 
-from implied_volatility_surface import ImpliedVolatilitySurface
+from logic.volatility_surface_logic import ImpliedVolatilitySurface
 
 
 class SurfaceCalculationThread(QThread):

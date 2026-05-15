@@ -19,11 +19,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from cache import DataCache, global_cache
 from utils import get_default_maturity_date
 from data_fetcher import DataFetcher
-from strategy_manager import StrategyManager
-from simulation_logic import SimulationLogic
-from forecast_logic import ForecastLogic
-from volatility_smile_logic import VolatilitySmileLogic
-from option_models import OptionModels
+from market_data_store import MarketDataStore
+from logic.strategy_logic import StrategyManager
+from logic.simulation_logic import SimulationLogic
+from logic.forecast_logic import ForecastLogic
+from logic.volatility_smile_logic import VolatilitySmileLogic
+from logic.bsm_logic import OptionModels
 
 
 # ============================================================================
@@ -103,6 +104,54 @@ class TestDataCache:
         """global_cache est bien une instance partagée avec TTL 1h."""
         assert isinstance(global_cache, DataCache)
         assert global_cache.ttl == 3600
+
+
+# ============================================================================
+#  MARKET DATA STORE
+# ============================================================================
+
+class TestMarketDataStore:
+    """Tests pour market_data_store.py."""
+
+    def test_subscribe_and_notify(self):
+        store = MarketDataStore()
+        received = []
+        store.subscribe(lambda s: received.append(s.S))
+        store.update(S=150.0)
+        assert received == [150.0]
+
+    def test_multiple_subscribers(self):
+        store = MarketDataStore()
+        calls = []
+        store.subscribe(lambda s: calls.append("tab1"))
+        store.subscribe(lambda s: calls.append("tab2"))
+        store.update(S=100.0)
+        assert calls == ["tab1", "tab2"]
+
+    def test_unsubscribe(self):
+        store = MarketDataStore()
+        calls = []
+        cb = lambda s: calls.append("called")
+        store.subscribe(cb)
+        store.unsubscribe(cb)
+        store.update(S=100.0)
+        assert calls == []
+
+    def test_update_attributes(self):
+        store = MarketDataStore()
+        store.update(S=100.0, r=0.05, q=0.01, ticker="AAPL")
+        assert store.S == 100.0
+        assert store.r == 0.05
+        assert store.q == 0.01
+        assert store.ticker == "AAPL"
+
+    def test_subscriber_error_does_not_crash(self):
+        store = MarketDataStore()
+        store.subscribe(lambda s: 1/0)  # division by zero
+        healthy_calls = []
+        store.subscribe(lambda s: healthy_calls.append(s.S))
+        store.update(S=42.0)  # should not raise
+        assert healthy_calls == [42.0]
 
 
 # ============================================================================

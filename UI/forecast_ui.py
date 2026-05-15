@@ -21,8 +21,8 @@ from PySide6.QtGui import QDoubleValidator
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from option_models import OptionModels
-from forecast_logic import ForecastLogic
+from logic.bsm_logic import OptionModels
+from logic.forecast_logic import ForecastLogic
 
 # ---------------------------------------------------------------------------
 # Worker QThread — exécute le forecast TimesFM en arrière-plan

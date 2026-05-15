@@ -8,7 +8,7 @@ from scipy.interpolate import interp1d
 from scipy.optimize import brentq
 from typing import Optional, Tuple, Any
 
-from option_models import OptionModels
+from logic.bsm_logic import OptionModels
 
 class VolatilitySmileLogic:
     """Logique de calcul du sourire de volatilité."""

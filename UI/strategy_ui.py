@@ -34,8 +34,8 @@ from matplotlib.figure import Figure
 import matplotlib.gridspec as gridspec
 
 from data_fetcher import DataFetcher
-from option_models import OptionModels
-from strategy_manager import StrategyManager
+from logic.bsm_logic import OptionModels
+from logic.strategy_logic import StrategyManager
 
 
 # =============================================================================
@@ -200,9 +200,10 @@ class StrategyTab(QWidget):
         ],
     }
 
-    def __init__(self, app_instance, parent=None):
+    def __init__(self, store, fetch_fn, parent=None):
         super().__init__(parent)
-        self.app           = app_instance
+        self.store         = store
+        self._fetch_fn     = fetch_fn
         self.data_fetcher  = DataFetcher()
         self.option_models = OptionModels()
         self.manager       = StrategyManager()
@@ -216,6 +217,7 @@ class StrategyTab(QWidget):
         self._ticker: Optional[str]   = None
 
         self._build_ui()
+        store.subscribe(self.on_market_update)
 
     # =========================================================================
     # Construction de l'UI
@@ -370,37 +372,33 @@ class StrategyTab(QWidget):
         if not ticker:
             QMessageBox.warning(self, "Erreur", "Veuillez entrer un symbole de ticker.")
             return
-        self.app.fetch_data_for_tab(ticker, self)
+        self._fetch_fn(ticker, self)
 
-    def update_financial_data(self, ticker: str, S: Optional[float],
-                               r: Optional[float], q: Optional[float],
-                               sigma: Optional[float],
-                               pricing_method: str = "") -> None:
-        """Appelé par update_all_tabs_financial_data dans gui_app.py."""
-        self._ticker = ticker
-        self._S      = S
-        self._r      = r
-        self._q      = q
-        self._sigma  = sigma
+    def on_market_update(self, store) -> None:
+        """Appelé automatiquement quand le store est mis à jour."""
+        self._ticker = store.ticker
+        self._S      = store.S
+        self._r      = store.r
+        self._q      = store.q
+        self._sigma  = store.sigma
 
-        if ticker and self.ticker_input.text().strip() == "":
-            self.ticker_input.setText(ticker)
+        if store.ticker and self.ticker_input.text().strip() == "":
+            self.ticker_input.setText(store.ticker)
 
-        self.live_price_label.setText(f"{S:.2f}" if S is not None else "N/A")
-        self.risk_free_label.setText(f"{r*100:.2f}%" if r is not None else "N/A")
-        self.dividend_label.setText(f"{q*100:.2f}%" if q is not None else "N/A")
-        if sigma is not None:
-            suffix = f" ({pricing_method})" if pricing_method else ""
-            self.vol_label.setText(f"{sigma*100:.2f}%{suffix}")
+        self.live_price_label.setText(f"{store.S:.2f}" if store.S is not None else "N/A")
+        self.risk_free_label.setText(f"{store.r*100:.2f}%" if store.r is not None else "N/A")
+        self.dividend_label.setText(f"{store.q*100:.2f}%" if store.q is not None else "N/A")
+        if store.sigma is not None:
+            pm = store.pricing_method if store.pricing_method else ""
+            suffix = f" ({pm})" if pm else ""
+            self.vol_label.setText(f"{store.sigma*100:.2f}%{suffix}")
         else:
             self.vol_label.setText("N/A")
 
+        self.company_name_label.setText(store.company_name if store.company_name else "N/A")
+
         self.fetch_data_button.setEnabled(True)
         self.fetch_data_button.setText("Récupérer/Synchroniser les Données")
-
-    def update_company_name(self, company_name: str) -> None:
-        """Met à jour le label du nom de l'entreprise."""
-        self.company_name_label.setText(company_name if company_name else "N/A")
 
     # =========================================================================
     # Lancement du calcul

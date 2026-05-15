@@ -11,7 +11,7 @@ from matplotlib.figure import Figure
 from datetime import datetime, date
 
 from data_fetcher import DataFetcher
-from volatility_smile_logic import VolatilitySmileLogic
+from logic.volatility_smile_logic import VolatilitySmileLogic
 
 
 class VolatilitySmileTab(QWidget):

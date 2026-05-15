@@ -9,8 +9,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from option_models import OptionModels
-from exotic_options_models import (
+from logic.bsm_logic import OptionModels
+from logic.crr_logic import CRRModels
+from logic.exotic_options_logic import (
     price_barrier_analytical,
     price_digital_analytical,
     price_asian_mc,
@@ -84,6 +85,7 @@ TOL_PARITY  = 1e-4   # propriétés mathématiques exactes
 TOL_GREEK   = 1e-6   # égalité gamma_call == gamma_put, etc.
 
 models = OptionModels()
+crr_models = CRRModels()
 
 
 def _pct(result: float, expected: float) -> str:
@@ -239,7 +241,7 @@ class TestCRR:
 
     def test_crr_call_american_atm(self):
         expected = GOLDEN["crr_call_american_atm"]
-        result = models.cox_ross_rubinstein_price(100, 100, 1.0, 0.05, 0.00, 0.20, 200, "call")
+        result = crr_models.cox_ross_rubinstein_price(100, 100, 1.0, 0.05, 0.00, 0.20, 200, "call")
         assert result == pytest.approx(expected, abs=TOL), (
             f"CRR call ATM: expected={expected:.4f}, got={result:.4f}, "
             f"diff={abs(result - expected):.4f}, pct={_pct(result, expected)}"
@@ -247,7 +249,7 @@ class TestCRR:
 
     def test_crr_put_american_atm(self):
         expected = GOLDEN["crr_put_american_atm"]
-        result = models.cox_ross_rubinstein_price(100, 100, 1.0, 0.05, 0.00, 0.20, 200, "put")
+        result = crr_models.cox_ross_rubinstein_price(100, 100, 1.0, 0.05, 0.00, 0.20, 200, "put")
         assert result == pytest.approx(expected, abs=TOL), (
             f"CRR put ATM: expected={expected:.4f}, got={result:.4f}, "
             f"diff={abs(result - expected):.4f}, pct={_pct(result, expected)}"
@@ -255,7 +257,7 @@ class TestCRR:
 
     def test_crr_put_american_itm(self):
         expected = GOLDEN["crr_put_american_itm"]
-        result = models.cox_ross_rubinstein_price(100, 110, 0.5, 0.05, 0.00, 0.25, 200, "put")
+        result = crr_models.cox_ross_rubinstein_price(100, 110, 0.5, 0.05, 0.00, 0.25, 200, "put")
         assert result == pytest.approx(expected, abs=TOL), (
             f"CRR put ITM: expected={expected:.4f}, got={result:.4f}, "
             f"diff={abs(result - expected):.4f}, pct={_pct(result, expected)}"
@@ -264,7 +266,7 @@ class TestCRR:
     def test_american_put_ge_european(self):
         """Le put américain vaut toujours ≥ au put européen (early exercise premium ≥ 0)."""
         bsm_put = models.black_scholes_price(100, 100, 1.0, 0.05, 0.20, 0.00, "put")
-        crr_put = models.cox_ross_rubinstein_price(100, 100, 1.0, 0.05, 0.00, 0.20, 200, "put")
+        crr_put = crr_models.cox_ross_rubinstein_price(100, 100, 1.0, 0.05, 0.00, 0.20, 200, "put")
         premium = crr_put - bsm_put
         assert crr_put >= bsm_put - 1e-6, (
             f"American put ({crr_put:.4f}) < European put ({bsm_put:.4f}), "

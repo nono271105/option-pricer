@@ -31,7 +31,7 @@ from matplotlib.figure import Figure
 import matplotlib.gridspec as gridspec
 
 from data_fetcher import DataFetcher
-from exotic_options_models import (
+from logic.exotic_options_logic import (
     ExoticResult,
     price_barrier_analytical, price_barrier_mc,
     price_asian_mc,
@@ -265,13 +265,14 @@ class ExoticOptionsTab(QWidget):
       - Panneau droit   : données actuelles + résultats + graphique Matplotlib
     """
 
-    def __init__(self, app_instance, parent=None):
+    def __init__(self, store, fetch_fn, parent=None):
         super().__init__(parent)
-        self.app          = app_instance
+        self.store      = store
+        self._fetch_fn  = fetch_fn
         self.data_fetcher = DataFetcher()
         self._worker: Optional[PricingWorker] = None
 
-        # Données marché synchronisées depuis BSM / fetch
+        # Données marché synchronisées depuis le store
         self._S:     Optional[float] = None
         self._r:     Optional[float] = None
         self._q:     Optional[float] = None
@@ -279,6 +280,7 @@ class ExoticOptionsTab(QWidget):
         self._ticker: Optional[str]  = None
 
         self._build_ui()
+        store.subscribe(self.on_market_update)
 
     # =========================================================================
     # Construction de l'interface
@@ -478,68 +480,50 @@ class ExoticOptionsTab(QWidget):
         if not ticker:
             QMessageBox.warning(self, "Erreur", "Veuillez entrer un symbole de ticker.")
             return
-        # Utilise exactement le même chemin que le bouton "Récupérer" de BSM/CRR
-        self.app.fetch_data_for_tab(ticker, self)
+        self._fetch_fn(ticker, self)
 
     # =========================================================================
-    # Synchronisation depuis gui_app.py
-    # update_financial_data : appelé par update_all_tabs_financial_data
+    # Synchronisation via MarketDataStore (pub/sub)
     # =========================================================================
 
-    def update_financial_data(self, ticker: str, S: Optional[float],
-                               r: Optional[float], q: Optional[float],
-                               sigma: Optional[float],
-                               pricing_method: str = "") -> None:
-        """
-        Même signature que simulation_tab.update_financial_data.
-        À appeler dans update_all_tabs_financial_data de gui_app.py :
+    def on_market_update(self, store) -> None:
+        """Appelé automatiquement quand le store est mis à jour."""
+        self._ticker = store.ticker
+        self._S      = store.S
+        self._r      = store.r
+        self._q      = store.q
+        self._sigma  = store.sigma
 
-            self.exotic_tab.update_financial_data(
-                self.current_ticker, self.S, self.r, self.q,
-                sigma_to_use, pricing_method_to_use
-            )
-        """
-        self._ticker = ticker
-        self._S      = S
-        self._r      = r
-        self._q      = q
-        self._sigma  = sigma
+        if store.ticker and self.ticker_input.text().strip() == "":
+            self.ticker_input.setText(store.ticker)
 
-        # Ticker : ne pas écraser ce que l'utilisateur a tapé lui-même
-        if ticker and self.ticker_input.text().strip() == "":
-            self.ticker_input.setText(ticker)
+        self.live_price_label.setText(f"{store.S:.2f}" if store.S is not None else "N/A")
+        self.risk_free_label.setText(f"{store.r*100:.2f}%" if store.r is not None else "N/A")
+        self.dividend_label.setText(f"{store.q*100:.2f}%" if store.q is not None else "N/A")
 
-        self.live_price_label.setText(f"{S:.2f}" if S is not None else "N/A")
-        self.risk_free_label.setText(f"{r*100:.2f}%" if r is not None else "N/A")
-        self.dividend_label.setText(f"{q*100:.2f}%" if q is not None else "N/A")
-
-        if sigma is not None:
-            suffix = f" ({pricing_method})" if pricing_method else ""
-            self.vol_label.setText(f"{sigma*100:.2f}%{suffix}")
+        if store.sigma is not None:
+            pm = store.pricing_method if store.pricing_method else ""
+            suffix = f" ({pm})" if pm else ""
+            self.vol_label.setText(f"{store.sigma*100:.2f}%{suffix}")
         else:
             self.vol_label.setText("N/A")
 
-        # Réactiver le bouton si bloqué par le fetch
+        self.company_name_label.setText(store.company_name if store.company_name else "N/A")
+
         self.fetch_data_button.setEnabled(True)
         self.fetch_data_button.setText("Récupérer/Synchroniser les Données")
 
-        # Pré-remplir strike ATM si encore à la valeur par défaut
-        if S is not None:
+        if store.S is not None:
             try:
                 if abs(float(self.strike_input.text()) - 150.0) < 0.01:
-                    self.strike_input.setText(f"{S:.2f}")
+                    self.strike_input.setText(f"{store.S:.2f}")
             except ValueError:
                 pass
-            # Barrière par défaut à 120% de S
             try:
                 if abs(float(self.barrier_input.text()) - 120.0) < 0.01:
-                    self.barrier_input.setText(f"{S * 1.20:.2f}")
+                    self.barrier_input.setText(f"{store.S * 1.20:.2f}")
             except ValueError:
                 pass
-
-    def update_company_name(self, company_name: str) -> None:
-        """Met à jour le label du nom de l'entreprise."""
-        self.company_name_label.setText(company_name if company_name else "N/A")
 
     # =========================================================================
     # Collecte des paramètres

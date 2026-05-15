@@ -2,7 +2,7 @@
 Module pour calculer et extraire la surface de volatilité implicite.
 Surface 3D : X = Strike, Y = Maturity, Z = Implied Volatility
 
-Méthodologie conforme Bloomberg :
+Méthodologie :
   1. Convention OTM-only (puts K<S, calls K≥S) — options les plus liquides
   2. Filtrage de liquidité (bid>0, ask>0, spread raisonnable, volume/OI)
   3. Filtrage par moneyness (±30% autour du spot)
@@ -18,10 +18,28 @@ from scipy.interpolate import griddata
 from scipy.optimize import brentq
 
 from data_fetcher import DataFetcher
-from option_models import OptionModels
-import iv_surface_config as config
+from logic.bsm_logic import OptionModels
 
 logger = logging.getLogger(__name__)
+
+# ═══════════════════════════════════════════════════════════════════
+# CONFIGURATION (ex iv_surface_config.py — constantes inlinées)
+# ═══════════════════════════════════════════════════════════════════
+NUM_EXPIRATIONS = 20
+MAX_DAYS_TO_MATURITY = 400
+MIN_STRIKES_REQUIRED = 5
+MAX_STRIKES_PER_EXPIRATION = 100
+MONEYNESS_MIN = 0.70
+MONEYNESS_MAX = 1.30
+MAX_SPREAD_PCT = 0.50
+MIN_OPEN_INTEREST = 10
+IV_MIN_THRESHOLD = 0.01
+IV_MAX_THRESHOLD = 3.0
+STRIKE_GRID_SIZE = 30
+MATURITY_GRID_SIZE = 12
+DATA_PADDING_PERCENT = 0.05
+INTERPOLATION_METHOD = 'cubic'
+INTERPOLATION_FALLBACK = 'nearest'
 
 
 class ImpliedVolatilitySurface:
@@ -101,11 +119,11 @@ class ImpliedVolatilitySurface:
         try:
             iv = brentq(
                 objective,
-                config.IV_MIN_THRESHOLD, config.IV_MAX_THRESHOLD,
+                IV_MIN_THRESHOLD, IV_MAX_THRESHOLD,
                 xtol=1e-6, maxiter=100,
             )
             # Rejeter les IV aberrantes
-            if iv < config.IV_MIN_THRESHOLD or iv > config.IV_MAX_THRESHOLD:
+            if iv < IV_MIN_THRESHOLD or iv > IV_MAX_THRESHOLD:
                 return None
             return iv
         except (ValueError, RuntimeError):
@@ -138,7 +156,7 @@ class ImpliedVolatilitySurface:
                 return {}
             
             # Limiter au nombre configuré d'expirations
-            expirations = expirations[:config.NUM_EXPIRATIONS]
+            expirations = expirations[:NUM_EXPIRATIONS]
             
             option_chains = {}
             for exp_date in expirations:
@@ -171,8 +189,8 @@ class ImpliedVolatilitySurface:
         
         Pipeline conforme Bloomberg :
           1. Convention OTM-only : puts pour K < S, calls pour K ≥ S
-          2. Filtres de liquidité (bid > 0, ask > 0, spread < config.MAX_SPREAD_PCT)
-          3. Filtrage par moneyness (config.MONEYNESS_MIN ≤ K/S ≤ config.MONEYNESS_MAX)
+          2. Filtres de liquidité (bid > 0, ask > 0, spread < MAX_SPREAD_PCT)
+          3. Filtrage par moneyness (MONEYNESS_MIN ≤ K/S ≤ MONEYNESS_MAX)
           4. IV calculée par inversion BSM depuis mid-price (bid+ask)/2 avec r et q
         
         Args:
@@ -195,11 +213,11 @@ class ImpliedVolatilitySurface:
         logger.info("Paramètres: r=%.4f, q=%.4f", current_rate, current_dividend)
         
         # Bornes de moneyness
-        K_min = current_price * config.MONEYNESS_MIN
-        K_max = current_price * config.MONEYNESS_MAX
+        K_min = current_price * MONEYNESS_MIN
+        K_max = current_price * MONEYNESS_MAX
         logger.info(
             "Filtre moneyness: K ∈ [%.1f, %.1f] (%.0f%% — %.0f%% du spot)",
-            K_min, K_max, config.MONEYNESS_MIN * 100, config.MONEYNESS_MAX * 100,
+            K_min, K_max, MONEYNESS_MIN * 100, MONEYNESS_MAX * 100,
         )
         
         # Récupérer les chaînes d'options
@@ -276,11 +294,11 @@ class ImpliedVolatilitySurface:
                         mid = (bid + ask) / 2.0
                         spread_pct = (ask - bid) / mid if mid > 0 else 999.0
                         
-                        if spread_pct > config.MAX_SPREAD_PCT:
+                        if spread_pct > MAX_SPREAD_PCT:
                             stats['liquidity_filtered'] += 1
                             continue
                         
-                        if volume <= 0 and oi < config.MIN_OPEN_INTEREST:
+                        if volume <= 0 and oi < MIN_OPEN_INTEREST:
                             stats['liquidity_filtered'] += 1
                             continue
                         
@@ -455,11 +473,11 @@ class ImpliedVolatilitySurface:
         
         # Filtrer par nombre max de jours (configurable)
         surface_data = surface_data[
-            surface_data['Days_to_Maturity'] <= config.MAX_DAYS_TO_MATURITY
+            surface_data['Days_to_Maturity'] <= MAX_DAYS_TO_MATURITY
         ].copy()
         
         if surface_data.empty:
-            logger.warning("Aucune donnée dans la plage de %s jours", config.MAX_DAYS_TO_MATURITY)
+            logger.warning("Aucune donnée dans la plage de %s jours", MAX_DAYS_TO_MATURITY)
             return None, None
         
         logger.info("Interpolation de la surface (%d points)...", len(surface_data))
