@@ -1,7 +1,4 @@
-"""
-UI/volatility_smile_ui.py
-Onglet Smile
-"""
+# Interface d'extraction et d'interpolation de la courbure de volatilité implicite
 
 from typing import Optional
 from PySide6.QtWidgets import (
@@ -37,7 +34,7 @@ class VolatilitySmileTab(QWidget):
         """Initialise l'interface utilisateur."""
         main_layout = QVBoxLayout(self)
 
-        # ------------------- INPUT GROUP -------------------
+        # zone de paramétrage de l'échéance cible
         input_group = QGroupBox("Paramètres du Sourire de Volatilité")
         input_layout = QFormLayout()
 
@@ -62,7 +59,7 @@ class VolatilitySmileTab(QWidget):
         input_group.setLayout(input_layout)
         main_layout.addWidget(input_group)
 
-        # ------------------- PLOT AREA -------------------
+        # zone de tracé de la déformation de la volatilité
         self.fig = Figure(figsize=(10, 6))
         self.canvas = FigureCanvas(self.fig)
         main_layout.addWidget(self.canvas)
@@ -96,7 +93,7 @@ class VolatilitySmileTab(QWidget):
             return
         
         try:
-            # 1. Utilisation des données déjà synchronisées si disponibles, sinon fetch
+            # validation du spot local ou rafraîchissement via API
             if self.current_S is not None and self.current_S > 0:
                 current_price = self.current_S
             else:
@@ -106,15 +103,14 @@ class VolatilitySmileTab(QWidget):
                     return
                 self.current_S = current_price
 
-            # 2. Récupération de r et q (fallback si non synchronisés)
-            # On privilégie les valeurs passées par l'app principale
+            # sécurisation des taux d'intérêt et dividendes
             r_to_use = self.current_r if self.current_r is not None else (self.data_fetcher.get_sofr_rate() or 0.05)
             q_to_use = self.current_q if self.current_q is not None else (self.data_fetcher.get_dividend_yield(ticker) or 0.0)
             
             self.current_r = r_to_use
             self.current_q = q_to_use
 
-            # 3. Récupération de la chaîne d'options
+            # extraction de l'intégralité des cotations pour la maturité
             maturity_date = datetime.strptime(maturity_date_str, "%Y-%m-%d").date()
             opt_chain, closest_date_str = self.data_fetcher.get_option_data_chain(ticker, datetime.combine(maturity_date, datetime.min.time()))
 
@@ -122,7 +118,7 @@ class VolatilitySmileTab(QWidget):
                 QMessageBox.warning(self, "Données", f"Aucune chaîne d'options trouvée pour {ticker}.")
                 return
             
-            # 4. Calcul du temps jusqu'à maturité
+            # calcul rigoureux du résiduel temporel
             closest_date = datetime.strptime(closest_date_str, '%Y-%m-%d').date()
             today = date.today()
             T = (closest_date - today).days / 365.0
@@ -139,21 +135,21 @@ class VolatilitySmileTab(QWidget):
                 QMessageBox.warning(self, "Calcul IV", "Impossible de calculer le smile de volatilité pour les options disponibles.")
                 return
 
-            # 10. TRACÉ
+            # rendu graphique de la structure par moneyness
             self.ax.clear()
 
-            # Courbe interpolée
+            # projection du polynôme de lissage
             self.ax.plot(strikes_interp, ivs_interp, color="#0062FF", linewidth=2, label='Smile')
 
-            # Points OTM réels
+            # isolation des cotations de référence hors-monnaie
             puts_df = smile_df[smile_df['type'] == 'put']
             calls_df = smile_df[smile_df['type'] == 'call']
 
-            # Ligne verticale du prix actuel (ATM)
+            # repérage de la frontière at-the-money
             self.ax.axvline(current_price, color='red', linestyle='--', 
                            linewidth=1.5, alpha=0.7, label=f'Spot: {current_price:.2f}')
 
-            # Mise en forme
+            # ajustements typographiques et grille
             self.ax.set_title(f"Sourire de Volatilité : {ticker} (Exp: {closest_date_str})", 
                              fontsize=12, fontweight='bold')
             self.ax.set_xlabel("Strike ($)", fontsize=10)
@@ -161,7 +157,7 @@ class VolatilitySmileTab(QWidget):
             self.ax.grid(True, linestyle=':', alpha=0.6)
             self.ax.legend(loc='best')
             
-            # Zoom intelligent sur Y
+            # cadrage adaptatif pour éliminer les valeurs extrêmes aberrantes
             y_min, y_max = ivs_interp.min(), ivs_interp.max()
             margin = (y_max - y_min) * 0.1
             self.ax.set_ylim(max(0, y_min - margin), y_max + margin)

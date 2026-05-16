@@ -1,6 +1,4 @@
-"""
-Logique métier pour le calcul et l'interpolation du sourire de volatilité.
-"""
+# Moteur de calcul et d'interpolation de la courbe de sourire de volatilité
 
 import numpy as np
 import pandas as pd

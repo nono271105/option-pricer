@@ -1,7 +1,4 @@
-"""
-UI/crr_ui.py 
-Onglet CRR (Cox-Ross-Rubinstein)
-"""
+# Interface de valorisation des options américaines par arbre binomial
 
 from __future__ import annotations
 
@@ -51,7 +48,7 @@ class CRRModelTab(QWidget):
         self.crr_models = CRRModels()
         self.strategy_manager = StrategyManager()
 
-        # État local
+        # état interne du composant pour la persistance des paramètres
         self.S = None
         self.r = None
         self.q = None
@@ -65,7 +62,7 @@ class CRRModelTab(QWidget):
     def _build_ui(self):
         main_layout = QHBoxLayout(self)
 
-        # --- Panneau de contrôle gauche ---
+        # construction de la barre d'outils latérale
         control_panel_layout = QVBoxLayout()
         control_panel_group = QGroupBox("Paramètres de l'option (CRR)")
         control_form_layout = QFormLayout()
@@ -113,7 +110,7 @@ class CRRModelTab(QWidget):
         control_panel_layout.addStretch(1)
         main_layout.addLayout(control_panel_layout, 1)
 
-        # --- Panneau d'affichage droite ---
+        # construction de la zone de visualisation principale
         display_panel_layout = QVBoxLayout()
 
         current_data_group = QGroupBox("Données Actuelles")
@@ -157,9 +154,7 @@ class CRRModelTab(QWidget):
 
         main_layout.addLayout(display_panel_layout, 2)
 
-    # =========================================================================
-    # Fetch data
-    # =========================================================================
+    # récupération asynchrone des conditions de marché
 
     def _fetch_data(self):
         ticker = self.ticker_input.text().strip().upper()
@@ -168,9 +163,7 @@ class CRRModelTab(QWidget):
             return
         self._fetch_fn(ticker, self)
 
-    # =========================================================================
-    # MarketDataStore — pub/sub
-    # =========================================================================
+    # synchronisation réactive avec le bus de données
 
     def on_market_update(self, store) -> None:
         """Appelé automatiquement quand le store est mis à jour."""
@@ -196,9 +189,7 @@ class CRRModelTab(QWidget):
         self.fetch_data_button.setEnabled(True)
         self.fetch_data_button.setText("Récupérer/Synchroniser les Données")
 
-    # =========================================================================
-    # calculate_crr_metrics — migré depuis gui_app.OptionPricingApp
-    # =========================================================================
+    # évaluation de la prime américaine et extraction des grecs discrets
 
     def calculate_crr_metrics(self):
         try:
@@ -261,9 +252,7 @@ class CRRModelTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erreur de Calcul CRR", f"Une erreur inattendue est survenue: {e}")
 
-    # =========================================================================
-    # _draw_payoff — copie de l'utilitaire partagé
-    # =========================================================================
+    # routine de tracé du profil de rentabilité à échéance
 
     def _draw_payoff(self, ax, K, premium, option_type, position):
         S_min = max(0, K * 0.7)
@@ -278,9 +267,7 @@ class CRRModelTab(QWidget):
         ax.grid(True)
         ax.legend()
 
-    # =========================================================================
-    # plot_crr_payoff
-    # =========================================================================
+    # génération de la visualisation des points morts
 
     def plot_crr_payoff(self):
         try:
@@ -319,9 +306,7 @@ class CRRModelTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erreur de Tracé", f"Une erreur est survenue lors du tracé du payoff: {e}")
 
-    # =========================================================================
-    # Greek evolution
-    # =========================================================================
+    # analyse de la dynamique des sensibilités par rapport au spot
 
     def handle_crr_greek_click(self, row: int, column: int) -> None:
         greek_names = ["Delta", "Gamma", "Theta", "Vega", "Rho"]

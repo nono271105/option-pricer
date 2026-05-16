@@ -48,33 +48,32 @@ class CRRModels:
         d = 1.0 / u
         p = (np.exp((r - q) * dt) - d) / (u - d)
 
-        # 1. Initialiser le prix de l'actif aux nœuds à l'échéance (t=N)
-        # S * u^j * d^(N-j) où j va de N à 0 (pour correspondre à l'ordre up-down)
+        # construction vectorisée des prix terminaux du sous-jacent à maturité
         j_values = np.arange(N, -1, -1)
         stock_prices = S * (u**j_values) * (d**(N - j_values))
 
-        # 2. Calculer la valeur de l'option à l'échéance (t=N)
+        # valorisation intrinsèque aux nœuds finaux de l'arbre
         if option_type == 'call':
             option_values = np.maximum(stock_prices - K, 0)
         elif option_type == 'put':
             option_values = np.maximum(K - stock_prices, 0)
         
-        # 3. Rétropropagation (Backward Induction) vectorisée
+        # remontée de l'arbre par induction rétrograde pour valoriser l'option
         for i in range(N - 1, -1, -1):
-            # Prix de l'actif aux noeuds à l'étape i
+            # états intermédiaires du sous-jacent
             j_i = np.arange(i, -1, -1)
             S_nodes = S * (u**j_i) * (d**(i - j_i))
             
-            # Valeur de continuation
+            # valeur actualisée si l'option est conservée
             continuation = df * (p * option_values[:-1] + (1 - p) * option_values[1:])
             
-            # Valeur d'exercice immédiat
+            # payoff en cas d'exercice anticipé
             if option_type == 'call':
                 exercise = np.maximum(S_nodes - K, 0)
             elif option_type == 'put':
                 exercise = np.maximum(K - S_nodes, 0)
             
-            # Option Américaine: Max(Continuation, Exercice)
+            # la prime américaine prime toujours sur l'exercice si elle est supérieure
             option_values = np.maximum(continuation, exercise)
 
         return option_values[0]
@@ -110,9 +109,8 @@ class CRRModels:
             Dict[str, float]: Dictionnaire avec clés 'delta', 'gamma', 'theta', 'vega', 'rho'
         """
         
-        # Pour Delta, Gamma, Theta, on reconstruit l'arbre jusqu'à t=2 pour
-        # éviter les instabilités numériques sévères des différences finies
-        # sur un modèle discret (le prix CRR n'est pas lisse par rapport à S et T).
+        # les différences finies directes étant instables sur CRR, l'extraction 
+        # des Grecs s'effectue directement depuis la géométrie des premiers nœuds
         
         dt = T / N
         df = np.exp(-r * dt)
@@ -147,32 +145,29 @@ class CRRModels:
             elif i == 1: C1 = option_values.copy()
             elif i == 0: C0 = option_values[0]
             
-        # Delta (à partir des nœuds t=1)
-        # C1[0] est le nœud up (S*u), C1[1] est le nœud down (S*d)
+        # extraction du delta depuis le premier pas binomial
         delta = (C1[0] - C1[1]) / (S*u - S*d)
         
-        # Gamma (à partir des nœuds t=2)
-        # C2 = [up-up, up-down, down-down]
+        # le gamma nécessite la concavité mesurée au second pas
         delta_up = (C2[0] - C2[1]) / (S*u**2 - S)
         delta_dn = (C2[1] - C2[2]) / (S - S*d**2)
         gamma = (delta_up - delta_dn) / ((S*u**2 - S*d**2) / 2.0)
         
-        # Theta (à partir des nœuds t=2 et t=0)
-        # C2[1] est le nœud où l'actif vaut S après un up et un down (S*u*d = S)
+        # approximation de la perte de valeur temporelle
         theta_annual = (C2[1] - C0) / (2 * dt)
         theta_daily = theta_annual / 365.0
 
-        # Vega et Rho n'ont pas de formule simple dans l'arbre, on garde les différences finies
+        # calcul numérique pour les sensibilités de second ordre
         def crr_price(sigma_local: float, r_local: float) -> float:
             return self.cox_ross_rubinstein_price(S, K, T, r_local, q, sigma_local, N, option_type)
 
-        # Vega (dérivée par rapport à sigma)
+        # choc infinitésimal sur la volatilité
         eps_sigma = 0.01
         sigma_plus  = sigma + eps_sigma
         sigma_minus = max(sigma - eps_sigma, 1e-4)
         vega = (crr_price(sigma_plus, r) - crr_price(sigma_minus, r)) / (sigma_plus - sigma_minus)
         
-        # Rho (dérivée par rapport à r)
+        # choc infinitésimal sur le taux sans risque
         eps_r = 0.0001
         rho_val = (crr_price(sigma, r + eps_r) - crr_price(sigma, r - eps_r)) / (2 * eps_r)
         rho_val = rho_val / 100.0

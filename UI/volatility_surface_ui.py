@@ -1,7 +1,4 @@
-"""
-UI/volatility_surface_ui.py
-Onglet Surface de volatilité
-"""
+# Interface de modélisation tridimensionnelle de la structure à terme de la volatilité
 
 from typing import Optional
 from PySide6.QtWidgets import (
@@ -75,14 +72,12 @@ class VolatilitySurfaceTab(QWidget):
 
         self._init_ui()
 
-    # =========================================================================
-    # UI
-    # =========================================================================
+    # assemblage de l'interface graphique
 
     def _init_ui(self) -> None:
         main_layout = QVBoxLayout(self)
 
-        # ── Panneau de contrôle ────────────────────────────────────────────
+        # bloc de configuration de l'extraction de la nappe
         control_group  = QGroupBox("Paramètres de la Surface IV")
         control_layout = QFormLayout()
 
@@ -121,11 +116,7 @@ class VolatilitySurfaceTab(QWidget):
         control_group.setLayout(control_layout)
         main_layout.addWidget(control_group)
 
-        # ── Zone graphique — QWebEngineView créé UNE SEULE FOIS à l'init ───
-        # Instancier QWebEngineView dynamiquement (dans plot_surface) provoque
-        # une fenêtre blanche sur Windows et parfois sur Mac car le contexte
-        # OpenGL n'est pas correctement hérité. Le créer ici, une seule fois,
-        # rattaché à la hiérarchie de widgets dès le départ, résout ce problème.
+        # initialisation statique du conteneur web pour stabiliser le rendu OpenGL
         self.web_view = QWebEngineView()
         self.web_view.setMinimumHeight(500)
         self.web_view.setHtml(
@@ -137,9 +128,7 @@ class VolatilitySurfaceTab(QWidget):
         )
         main_layout.addWidget(self.web_view, 1)
 
-    # =========================================================================
-    # Calcul
-    # =========================================================================
+    # orchestration de la construction de la matrice 3D
 
     def calculate_surface(self) -> None:
         ticker = self.ticker_input.text().strip().upper()
@@ -179,8 +168,7 @@ class VolatilitySurfaceTab(QWidget):
             self.raw_data  = self.calculation_thread.raw_data
             self.grid_data = self.calculation_thread.grid_data
 
-        # Les filtres (moneyness, liquidité, IV) sont désormais appliqués
-        # en amont dans le pipeline ImpliedVolatilitySurface.
+        # validation de la complétude du jeu de données post-filtrage
 
         if self.raw_data is not None and not self.raw_data.empty:
             self._display_figure()
@@ -207,9 +195,7 @@ class VolatilitySurfaceTab(QWidget):
         self.calculate_button.setEnabled(True)
         self.progress_bar.setVisible(False)
 
-    # =========================================================================
-    # Construction de la figure — source unique partagée par app ET export
-    # =========================================================================
+    # génération déterministe de la topologie spatiale avec Plotly
 
     def _build_figure(self) -> go.Figure:
         """
@@ -221,7 +207,7 @@ class VolatilitySurfaceTab(QWidget):
         ticker = self.ticker_input.text().strip().upper()
         fig    = go.Figure()
 
-        # Points bruts masqués par défaut (visibles via clic sur légende)
+        # projection spatiale du nuage de points de marché
         fig.add_trace(go.Scatter3d(
             x=self.raw_data['Strike'],
             y=self.raw_data['Days_to_Maturity'],
@@ -243,7 +229,7 @@ class VolatilitySurfaceTab(QWidget):
             ),
         ))
 
-        # Surface interpolée
+        # modélisation du maillage lissé de la surface
         if self.grid_data is not None:
             X_grid, Y_grid, Z_grid = self.grid_data
             Z_pct = Z_grid * 100
@@ -301,9 +287,7 @@ class VolatilitySurfaceTab(QWidget):
         )
         return fig
 
-    # =========================================================================
-    # Affichage dans l'app
-    # =========================================================================
+    # injection du rendu interactif dans le composant WebView
 
     def _display_figure(self) -> None:
         """Écrit la figure dans un fichier temporaire et le charge via URL.
@@ -316,7 +300,7 @@ class VolatilitySurfaceTab(QWidget):
             import tempfile
             fig = self._build_figure()
 
-            # Fichier temporaire persistant le temps de la session
+            # contournement des limitations de mémoire tampon du moteur Chromium
             if not hasattr(self, '_tmp_html_path'):
                 tmp = tempfile.NamedTemporaryFile(
                     suffix='.html', delete=False, mode='w', encoding='utf-8'
@@ -337,9 +321,7 @@ class VolatilitySurfaceTab(QWidget):
                 f"Impossible d'afficher le graphique : {e}"
             )
 
-    # =========================================================================
-    # Export HTML
-    # =========================================================================
+    # sérialisation de l'environnement interactif pour consultation externe
 
     def export_html(self) -> None:
         if self.raw_data is None or self.raw_data.empty:
@@ -351,7 +333,7 @@ class VolatilitySurfaceTab(QWidget):
                 f"iv_surface_{ticker}_"
                 f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
             )
-            fig = self._build_figure()   # même figure que dans l'app
+            fig = self._build_figure()
             fig.write_html(filename, include_plotlyjs='inline')
             QMessageBox.information(
                 self, "Succès", f"Fichier exporté : {filename}"
@@ -361,9 +343,7 @@ class VolatilitySurfaceTab(QWidget):
                 self, "Erreur", f"Erreur lors de l'export : {e}"
             )
 
-    # =========================================================================
-    # Synchronisation depuis gui_app
-    # =========================================================================
+    # écoute réactive des mises à jour globales
 
     def update_financial_params(
         self,

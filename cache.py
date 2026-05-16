@@ -1,7 +1,4 @@
-"""
-Module de cache pour les données API avec TTL (Time To Live).
-Évite les requêtes API répétées en stockant les résultats localement.
-"""
+# Cache en mémoire avec TTL pour éviter les requêtes API répétitives
 
 from typing import Optional, Any, Dict
 from datetime import datetime
@@ -47,7 +44,7 @@ class DataCache:
             elapsed = (datetime.now() - timestamp).total_seconds()
             
             if elapsed > self.ttl:
-                # Valeur expirée, la supprimer
+                # entrée expirée, on la nettoie au moment de l'accès
                 del self._cache[key]
                 return None
             
@@ -92,5 +89,5 @@ class DataCache:
             }
 
 
-# Instance globale du cache (partagée entre tous les modules)
-global_cache = DataCache(ttl_seconds=3600)  # 1 heure par défaut
+# instance partagée entre tous les modules, TTL d'une heure
+global_cache = DataCache(ttl_seconds=3600)

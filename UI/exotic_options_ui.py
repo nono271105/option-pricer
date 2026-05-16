@@ -1,7 +1,4 @@
-"""
-exotic_options_tab.py
-Onglet PySide6 "Options Exotiques"
-"""
+# Interface de valorisation et de simulation Monte Carlo pour produits exotiques
 
 from __future__ import annotations
 
@@ -32,9 +29,7 @@ from logic.exotic_options_logic import (
 )
 
 
-# =============================================================================
-# Worker QThread — calcul analytique + Monte Carlo en arrière-plan
-# =============================================================================
+# processus asynchrone pour éviter le blocage de l'interface graphique lors des simulations
 
 class PricingWorker(QThread):
     result_ready   = Signal(object, object)   # (ana: ExoticResult, mc: ExoticResult)
@@ -87,9 +82,7 @@ class PricingWorker(QThread):
             self.error_occurred.emit(str(exc))
 
 
-# =============================================================================
-# Canvas Matplotlib — trajectoires MC, distribution payoffs, profil payoff
-# =============================================================================
+# gestionnaire du rendu visuel de l'analyse stochastique
 
 class ExoticCanvas(FigureCanvas):
 
@@ -130,7 +123,7 @@ class ExoticCanvas(FigureCanvas):
 
         time_axis = np.linspace(0, T * 252, n_steps + 1)
 
-        # ── 1. Trajectoires Monte Carlo ───────────────────────────────────────
+        # projection visuelle d'un sous-ensemble des chemins simulés
         ax = self.ax_paths
         if mc.price_paths is not None:
             paths  = mc.price_paths
@@ -138,7 +131,7 @@ class ExoticCanvas(FigureCanvas):
             alpha  = max(0.03, 0.5 / n_show)
             for i in range(n_show):
                 ax.plot(time_axis, paths[i], color="#1f77b4", alpha=alpha, lw=0.7)
-            # Trajectoire moyenne
+            # espérance d'évolution du sous-jacent
             ax.plot(time_axis, paths[:n_show].mean(axis=0),
                     color="darkorange", lw=2.0, label="Moyenne MC", zorder=5)
             ax.axhline(S, color="red", lw=1.3, ls="--", label=f"S₀ = {S:.2f}")
@@ -154,7 +147,7 @@ class ExoticCanvas(FigureCanvas):
         ax.set_ylabel("Prix sous-jacent ($)", fontsize=8)
         ax.legend(fontsize=7, loc="upper left")
 
-        # ── 2. Distribution des payoffs ───────────────────────────────────────
+        # histogramme des valeurs terminales du contrat
         ax = self.ax_dist
         if mc.payoffs is not None:
             all_pf  = mc.payoffs
@@ -170,7 +163,7 @@ class ExoticCanvas(FigureCanvas):
             ax.set_xlabel("Payoff ($)", fontsize=8)
             ax.set_ylabel("Densité", fontsize=8)
 
-        # ── 3. Profil de payoff à maturité ────────────────────────────────────
+        # représentation du paiement en fonction de l'état final
         ax = self.ax_payoff
         S_range = np.linspace(S * 0.5, S * 1.5, 300)
 
@@ -193,14 +186,11 @@ class ExoticCanvas(FigureCanvas):
         elif exotic == "asian":
             K = params["K"]
             phi = 1 if otype == "call" else -1
-            # Pour une asiatique arithmétique, E[avg(S)] ≈ S * exp((r-q-sigma²/6)*T/2)
-            # approximation de la moyenne du GBM sur [0,T]
-            # Le profil à maturité en fonction de avg(S) = payoff vanilla sur avg
-            # On affiche le payoff vanilla (borne supérieure) ET la borne corrigée
+            # la moyenne arithmétique réduit l'impact des extrêmes directionnels
             vanilla = np.maximum(phi * (S_range - K), 0)
-            # Facteur de réduction approximatif : vol effective de la moyenne ≈ sigma/sqrt(3)
+            # heuristique d'ajustement de la volatilité équivalente
             sigma_eff = params.get("sigma", 0.20) / np.sqrt(3)
-            # Borne inférieure indicative : prix BSM avec sigma réduit (non rigoureux, illustratif)
+            # affichage de la frontière d'évaluation vanilla
             ax.plot(S_range, vanilla, color="gray", lw=1.0, ls="--", alpha=0.5,
                 label="Payoff vanilla (réf.)")
             ax.fill_between(S_range, vanilla, alpha=0.10, color="gray")
@@ -211,12 +201,7 @@ class ExoticCanvas(FigureCanvas):
             ax.axvline(K, color="green", lw=1.2, ls="--", label=f"K = {K:.2f}")
 
         elif exotic == "lookback":
-            # Le payoff lookback est path-dependent : max(S_T - S_min, 0) pour un call.
-            # Il est impossible de le représenter exactement sur un axe S_T seul.
-            # On affiche à la place le payoff espéré APPROXIMATIF basé sur la formule
-            # analytique de Goldmann-Sosin-Gatto pour le cas simplifié (S_min ~ S * exp(-sigma*sqrt(T))).
-            # Pour un call lookback flottant, le prix analytique est toujours > max(S_T - S0, 0).
-            # On affiche la borne inférieure (vanilla) + une annotation explicative.
+            # la dépendance au chemin rend la représentation bidimensionnelle imparfaite
             vanilla_lb = np.maximum(S_range - S, 0) if otype == "call" else np.maximum(S - S_range, 0)
             ax.plot(S_range, vanilla_lb, color="darkorange", lw=1.5, ls="--",
                 label="Borne inf. (Vanilla)")
@@ -245,9 +230,7 @@ class ExoticCanvas(FigureCanvas):
         self.fig.canvas.draw_idle()
 
 
-# =============================================================================
-# Onglet principal — même structure que BSM / CRR
-# =============================================================================
+# construction du panneau principal des contrats exotiques
 
 class ExoticOptionsTab(QWidget):
     """
@@ -264,7 +247,7 @@ class ExoticOptionsTab(QWidget):
         self.data_fetcher = DataFetcher()
         self._worker: Optional[PricingWorker] = None
 
-        # Données marché synchronisées depuis le store
+        # isolation locale de l'état financier
         self._S:     Optional[float] = None
         self._r:     Optional[float] = None
         self._q:     Optional[float] = None
@@ -274,17 +257,15 @@ class ExoticOptionsTab(QWidget):
         self._build_ui()
         store.subscribe(self.on_market_update)
 
-    # =========================================================================
-    # Construction de l'interface
-    # =========================================================================
+    # assemblage des composants graphiques
 
     def _build_ui(self):
         main_layout = QHBoxLayout(self)
 
-        # ── Panneau gauche ─────────────────────────────────────────────────────
+        # zone de saisie des paramètres
         left_layout = QVBoxLayout()
 
-        # --- Groupe paramètres principaux ---
+        # définitions standards du contrat
         params_group = QGroupBox("Paramètres de l'option exotique")
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
@@ -327,29 +308,29 @@ class ExoticOptionsTab(QWidget):
         params_group.setLayout(form)
         left_layout.addWidget(params_group)
 
-        # --- Groupe paramètres spécifiques (conditionnel) ---
+        # attributs variables selon le sous-type de produit
         self.specific_group = QGroupBox("Paramètres spécifiques")
         self.specific_form  = QFormLayout()
         self.specific_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
-        # Widgets barrière
+        # seuils de désactivation ou d'activation
         self.barrier_input = QLineEdit("120.00")
         self.barrier_input.setValidator(QDoubleValidator(0.0, 1e6, 2))
         self.barrier_type_combo = QComboBox()
         self.barrier_type_combo.addItems([
             "up-and-out", "up-and-in", "down-and-out", "down-and-in"
         ])
-        # Widgets asiatique
+        # méthode d'agrégation de la moyenne
         self.averaging_combo = QComboBox()
         self.averaging_combo.addItems(["arithmetic", "geometric"])
-        # Widgets digitale
+        # paiement forfaitaire binaire
         self.payoff_amount_input = QLineEdit("1.00")
         self.payoff_amount_input.setValidator(QDoubleValidator(0.0, 1e6, 2))
 
         self.specific_group.setLayout(self.specific_form)
         left_layout.addWidget(self.specific_group)
 
-        # --- Groupe Monte Carlo ---
+        # configuration de la précision numérique
         mc_group = QGroupBox("Monte Carlo")
         mc_form  = QFormLayout()
         mc_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
@@ -365,7 +346,7 @@ class ExoticOptionsTab(QWidget):
         mc_group.setLayout(mc_form)
         left_layout.addWidget(mc_group)
 
-        # --- Boutons (même style que BSM / CRR) ---
+        # actions de contrôle
         self.fetch_data_button = QPushButton("Récupérer/Synchroniser les Données")
         self.fetch_data_button.clicked.connect(self._fetch_data)
         left_layout.addWidget(self.fetch_data_button)
@@ -377,10 +358,10 @@ class ExoticOptionsTab(QWidget):
         left_layout.addStretch(1)
         main_layout.addLayout(left_layout, 1)
 
-        # ── Panneau droit ──────────────────────────────────────────────────────
+        # zone d'affichage des résultats
         right_layout = QVBoxLayout()
 
-        # --- Données actuelles (identique à CRR) ---
+        # rappel des conditions de marché
         data_group  = QGroupBox("Données Actuelles")
         data_layout = QFormLayout()
 
@@ -396,7 +377,7 @@ class ExoticOptionsTab(QWidget):
         data_group.setLayout(data_layout)
         right_layout.addWidget(data_group)
 
-        # --- Résultats ---
+        # restitution des valeurs théoriques
         results_group  = QGroupBox("Résultats du Pricing")
         results_layout = QFormLayout()
 
@@ -412,7 +393,7 @@ class ExoticOptionsTab(QWidget):
         results_group.setLayout(results_layout)
         right_layout.addWidget(results_group)
 
-        # --- Graphique Matplotlib (même conteneur que BSM "Payoff de l'option") ---
+        # intégration du canevas interactif
         plot_group  = QGroupBox("Visualisation Monte Carlo")
         plot_layout = QVBoxLayout()
         self.canvas = ExoticCanvas(self)
@@ -422,16 +403,13 @@ class ExoticOptionsTab(QWidget):
 
         main_layout.addLayout(right_layout, 2)
 
-        # Initialiser les widgets conditionnels
+        # amorçage de la vue selon le type par défaut
         self._on_exotic_changed()
 
-    # =========================================================================
-    # Affichage conditionnel des paramètres spécifiques
-    # =========================================================================
+    # réorganisation dynamique du formulaire selon le contrat sélectionné
 
     def _clear_specific_form(self):
-        # takeRow détache la ligne sans détruire les widgets côté C++.
-        # removeRow() les supprime définitivement → RuntimeError au prochain accès.
+        # nettoyage sécurisé des conteneurs Qt pour éviter les fuites de mémoire
         while self.specific_form.rowCount() > 0:
             row = self.specific_form.takeRow(0)
             if row.labelItem and row.labelItem.widget():
@@ -443,29 +421,27 @@ class ExoticOptionsTab(QWidget):
         self._clear_specific_form()
         idx = self.exotic_combo.currentIndex()
 
-        if idx == 0:    # Barrière
+        if idx == 0:    # configuration des options à seuil
             self.specific_form.addRow("Niveau barrière H ($):", self.barrier_input)
             self.specific_form.addRow("Type de barrière:",       self.barrier_type_combo)
             self.strike_input.setEnabled(True)
             self.specific_group.setVisible(True)
 
-        elif idx == 1:  # Asiatique
+        elif idx == 1:  # configuration des options sur moyenne
             self.specific_form.addRow("Moyenne:", self.averaging_combo)
             self.strike_input.setEnabled(True)
             self.specific_group.setVisible(True)
 
-        elif idx == 2:  # Lookback — pas de strike, pas de params
+        elif idx == 2:  # le strike est déterminé ex-post par les extrema
             self.strike_input.setEnabled(False)
             self.specific_group.setVisible(False)
 
-        else:           # Digitale
+        else:           # configuration des contrats tout-ou-rien
             self.specific_form.addRow("Montant payoff ($):", self.payoff_amount_input)
             self.strike_input.setEnabled(True)
             self.specific_group.setVisible(True)
 
-    # =========================================================================
-    # Récupération des données marché — via le mécanisme central de l'app
-    # =========================================================================
+    # appel de l'API de données
 
     def _fetch_data(self):
         ticker = self.ticker_input.text().strip().upper()
@@ -474,9 +450,7 @@ class ExoticOptionsTab(QWidget):
             return
         self._fetch_fn(ticker, self)
 
-    # =========================================================================
-    # Synchronisation via MarketDataStore (pub/sub)
-    # =========================================================================
+    # écoute active des changements d'état global
 
     def on_market_update(self, store) -> None:
         """Appelé automatiquement quand le store est mis à jour."""
@@ -517,9 +491,7 @@ class ExoticOptionsTab(QWidget):
             except ValueError:
                 pass
 
-    # =========================================================================
-    # Collecte des paramètres
-    # =========================================================================
+    # agrégation et validation de la saisie utilisateur
 
     def _collect_params(self) -> Optional[dict]:
         if self._S is None or self._r is None or self._q is None or self._ticker is None:
@@ -547,13 +519,13 @@ class ExoticOptionsTab(QWidget):
                                 "La date d'échéance doit être dans le futur.")
             return None
         
-        # --- RÉCUPÉRATION DE L'IV ET DU PRIX MARCHÉ POUR LES PARAMÈTRES EXOTIQUES ---
+        # extraction de la volatilité implicite la plus proche
         option_type = self.option_type_combo.currentText()
         fetched_iv, market_price, closest_date = self.data_fetcher.get_implied_volatility_and_price(
             self._ticker, K, maturity_datetime, option_type
         )
         
-        # --- Logique de choix de la Volatilité (IV vs Historique) ---
+        # cascade de sélection de la volatilité pertinente
         if fetched_iv is not None and fetched_iv > 0.001:
             sigma = fetched_iv
             pricing_method = "IV Marché"
@@ -561,7 +533,7 @@ class ExoticOptionsTab(QWidget):
             sigma = self._sigma if self._sigma is not None and self._sigma > 0 else 0.20
             pricing_method = "Vol Historique (Fallback)"
         
-        # Mise à jour de l'affichage de la volatilité
+        # rafraîchissement visuel du paramètre retenu
         self.vol_label.setText(f"{sigma*100:.2f}% ({pricing_method})")
 
         try:
@@ -606,9 +578,7 @@ class ExoticOptionsTab(QWidget):
             "n_steps"      : n_steps,
         }
 
-    # =========================================================================
-    # Lancement du calcul
-    # =========================================================================
+    # exécution asynchrone des modèles mathématiques
 
     def _on_calculate(self):
         params = self._collect_params()
@@ -620,7 +590,7 @@ class ExoticOptionsTab(QWidget):
         for lbl in (self.price_ana_label, self.price_mc_label,
                     self.stderr_mc_label, self.diff_label):
             lbl.setText("...")
-            lbl.setStyleSheet("")   # Réinitialise le style (gris/italique éventuel)
+            lbl.setStyleSheet("")   # purge des classes CSS contextuelles
 
         self._worker = PricingWorker(params)
         self._worker.result_ready.connect(
@@ -629,24 +599,22 @@ class ExoticOptionsTab(QWidget):
         self._worker.finished.connect(self._reset_button)
         self._worker.start()
 
-    # =========================================================================
-    # Callbacks
-    # =========================================================================
+    # gestionnaires des événements de fin de traitement
 
     def _on_result(self, ana: Optional[ExoticResult], mc: ExoticResult, params: dict):
-        # Prix analytique — N/A pour asiatique et lookback
+        # affichage de la solution fermée si elle existe
         if ana is not None:
             self.price_ana_label.setText(f"${ana.price:.4f}")
         else:
             self.price_ana_label.setText("N/A — Monte Carlo uniquement")
             self.price_ana_label.setStyleSheet("color: gray; font-style: italic;")
 
-        # Prix Monte Carlo
+        # restitution de l'estimation stochastique
         self.price_mc_label.setText(f"${mc.price:.4f}")
         self.stderr_mc_label.setText(
             f"±{mc.std_error:.4f}" if mc.std_error is not None else "N/A")
 
-        # Écart — seulement si les deux prix sont disponibles
+        # mesure de l'erreur d'approximation du modèle MC
         if ana is not None:
             diff = abs(ana.price - mc.price)
             pct  = diff / ana.price * 100 if ana.price > 0 else 0.0

@@ -1,10 +1,4 @@
-"""
-exotic_options_models.py
-------------------------
-Moteur de calcul pour les options exotiques.
-Supporte : Barrières, Asiatiques, Lookback, Digitales/Binaires
-Méthodes  : Formules analytiques (quand disponibles) + Monte Carlo.
-"""
+# Moteur de valorisation des produits dérivés exotiques par méthodes analytiques et stochastiques
 
 from __future__ import annotations
 
@@ -119,7 +113,7 @@ def price_barrier_analytical(
     R   = rebate
     sqT = np.sqrt(tau)
 
-    # ── Variables auxiliaires ──────────────────────────────────────────────
+    # initialisation des intermédiaires de calcul du modèle de Rubinstein
     mu  = r - d - 0.5 * sigma ** 2
     lam = 1.0 + mu / sigma ** 2
     a   = mu / sigma ** 2
@@ -133,9 +127,7 @@ def price_barrier_analytical(
     y1 = (np.log(H / S)          + drift) / (sigma * sqT)
     z  = (np.log(H / S) + b * sigma ** 2 * tau) / (sigma * sqT)
 
-    # φ et η selon type (Table 1 du papier)
-    # φ = +1 pour call, −1 pour put
-    # η = +1 pour down barriers, −1 pour up barriers
+    # indicateurs binaires définissant le sens de la barrière et le type de l'option
     phi = 1  if option_type == "call" else -1
     eta = 1  if "down" in barrier_type else -1
 
@@ -144,7 +136,7 @@ def price_barrier_analytical(
 
     N = norm.cdf   # raccourci
 
-    # ── Blocs A–F (formules exactes du papier) ─────────────────────────────
+    # évaluation des probabilités composées selon les six sous-blocs structurels
     def _A() -> float:
         return (  phi * S * np.exp(-d * tau) * HS_2lam   * N(eta * y)
                 - phi * K * np.exp(-r * tau) * HS_2lam2  * N(eta * y  - eta * sigma * sqT))
@@ -172,7 +164,7 @@ def price_barrier_analytical(
 
     A, B, C, D, E, F = _A(), _B(), _C(), _D(), _E(), _F()
 
-    # ── Sélection de la combinaison selon Table 1 ──────────────────────────
+    # agrégation algébrique des composantes selon le profil spécifique du contrat
     if option_type == "call":   # φ = +1
         if barrier_type == "down-and-in":
             price = (A + B)             if K >= H else (C - D + E + B)
@@ -229,7 +221,7 @@ def price_barrier_mc(
     price = discount * payoffs.mean()
     std_err = discount * payoffs.std() / np.sqrt(n_sims)
 
-    # Sous-échantillon de trajectoires pour le graphique (max 200)
+    # extraction d'un sous-ensemble représentatif pour l'affichage visuel
     sample_idx = np.random.default_rng(seed).choice(n_sims, size=min(200, n_sims), replace=False)
     return ExoticResult(
         price=round(float(price), 6),

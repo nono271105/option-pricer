@@ -1,7 +1,4 @@
-"""
-UI/forecast_ui.py
-Onglet Forecast TimesFM
-"""
+# Interface de prévision temporelle par deep learning et réévaluation BSM
 
 import numpy as np
 from datetime import date
@@ -21,9 +18,7 @@ from matplotlib.figure import Figure
 from logic.bsm_logic import OptionModels
 from logic.forecast_logic import ForecastLogic
 
-# ---------------------------------------------------------------------------
-# Worker QThread — exécute le forecast TimesFM en arrière-plan
-# ---------------------------------------------------------------------------
+# thread d'isolement pour l'inférence du réseau de neurones
 class ForecastWorker(QThread):
     """
     Thread dédié au chargement de TimesFM et à l'inférence.
@@ -56,9 +51,7 @@ class ForecastWorker(QThread):
             self.error.emit(str(exc))
 
 
-# ---------------------------------------------------------------------------
-# Widget principal de l'onglet
-# ---------------------------------------------------------------------------
+# contrôleur de la vue de prévision
 class ForecastTimesFMTab(QWidget):
     """
     Onglet « Forecast TimesFM » intégré au QTabWidget principal.
@@ -77,72 +70,72 @@ class ForecastTimesFMTab(QWidget):
         self.option_models = OptionModels()
         self.forecast_logic = ForecastLogic(self.option_models)
 
-        # Paramètres financiers synchronisés depuis l'app principale
+        # isolation locale de l'état financier
         self.ticker_symbol: str = "AAPL"
         self.S: Optional[float] = None
         self.r: float = 0.05
         self.q: float = 0.0
         self.sigma: float = 0.20
 
-        # Référence au thread en cours (pour éviter le garbage-collect)
+        # maintien de la durée de vie de l'objet asynchrone
         self._worker: Optional[ForecastWorker] = None
 
         self.init_ui()
 
-    # ------------------------------------------------------------------ UI
+    # assemblage des composants graphiques
     def init_ui(self) -> None:
         """Initialise l'interface utilisateur de l'onglet Forecast."""
         main_layout = QHBoxLayout(self)
 
-        # === Panneau de contrôle (gauche) ===
+        # zone de saisie des paramètres
         control_panel = QVBoxLayout()
         control_group = QGroupBox("Paramètres Forecast TimesFM")
         form = QFormLayout()
 
-        # Ticker
+        # sélection de l'actif
         self.ticker_input = QLineEdit(self.ticker_symbol)
         self.ticker_input.setPlaceholderText("Ex : AAPL")
         form.addRow("Ticker :", self.ticker_input)
 
-        # Entreprise
+        # libellé descriptif
         self.company_name_label = QLabel("N/A")
         form.addRow("Entreprise :", self.company_name_label)
 
-        # Horizon (5 – 63 jours)
+        # profondeur de projection
         self.horizon_spin = QSpinBox()
         self.horizon_spin.setRange(5, 63)
         self.horizon_spin.setValue(21)
         self.horizon_spin.setSuffix(" jours")
         form.addRow("Horizon :", self.horizon_spin)
 
-        # Strike K
+        # seuil d'exercice
         self.strike_input = QLineEdit("150.00")
         self.strike_input.setValidator(QDoubleValidator(0.01, 100000.0, 2))
         form.addRow("Strike (K) :", self.strike_input)
 
-        # Date de maturité
+        # échéance du contrat
         from utils import get_default_maturity_date
         self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
         form.addRow("Maturité :", self.maturity_date_input)
 
-        # Type call / put
+        # sens de la transaction
         self.option_type_combo = QComboBox()
         self.option_type_combo.addItems(["call", "put"])
         form.addRow("Type :", self.option_type_combo)
 
-        # Bouton lancer
+        # déclenchement de l'inférence
         self.launch_button = QPushButton("Lancer le Forecast")
         self.launch_button.clicked.connect(self.on_launch)
         form.addRow(self.launch_button)
 
-        # Barre de progression
+        # indicateur d'activité asynchrone
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         form.addRow("Progression :", self.progress_bar)
 
-        # Label de statut
+        # retour textuel sur l'état du système
         self.status_label = QLabel("En attente…")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setStyleSheet(
@@ -150,7 +143,7 @@ class ForecastTimesFMTab(QWidget):
         )
         form.addRow("Statut :", self.status_label)
 
-        # Données synchronisées (lecture seule)
+        # rappel des conditions de marché
         self.s_label = QLabel("N/A")
         self.r_label = QLabel("N/A")
         self.q_label = QLabel("N/A")
@@ -166,7 +159,7 @@ class ForecastTimesFMTab(QWidget):
 
         main_layout.addLayout(control_panel, 1)
 
-        # === Zone graphique (droite) ===
+        # zone d'affichage des résultats
         plot_group = QGroupBox("Résultats du Forecast")
         plot_layout = QVBoxLayout()
 
@@ -177,7 +170,7 @@ class ForecastTimesFMTab(QWidget):
         plot_group.setLayout(plot_layout)
         main_layout.addWidget(plot_group, 3)
 
-    # --------------------------------------------------------- Synchronisation
+    # écoute active des changements d'état global
     def update_financial_params(self, ticker, S, r, q, sigma):
         """
         Appelée par l'app principale pour synchroniser les paramètres
@@ -205,7 +198,7 @@ class ForecastTimesFMTab(QWidget):
         """Met à jour le label du nom de l'entreprise."""
         self.company_name_label.setText(company_name if company_name else "N/A")
 
-    # --------------------------------------------------------- Lancement
+    # exécution du pipeline prédictif
     def on_launch(self):
         """Valide les inputs et lance le ForecastWorker."""
         ticker = self.ticker_input.text().strip().upper()
@@ -225,7 +218,7 @@ class ForecastTimesFMTab(QWidget):
 
         horizon = self.horizon_spin.value()
 
-        # Extraire la date de maturité (compatible Python 3.8)
+        # calcul vectorisé de la durée de vie résiduelle
         qd = self.maturity_date_input.date()
         maturity = date(qd.year(), qd.month(), qd.day())
         today = date.today()
@@ -235,13 +228,13 @@ class ForecastTimesFMTab(QWidget):
                                 "La date de maturité doit être dans le futur.")
             return
 
-        # Désactiver le bouton et afficher le statut
+        # verrouillage préventif de l'interface
         self.launch_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)
         self._set_status("Chargement du modèle TimesFM…", "orange")
 
-        # Lancer le worker
+        # instanciation du processus d'arrière-plan
         self._worker = ForecastWorker(ticker, horizon, self.forecast_logic)
         self._worker.finished.connect(
             lambda pf, qf, hist: self._on_forecast_done(pf, qf, hist, K, T_total, horizon)
@@ -249,7 +242,7 @@ class ForecastTimesFMTab(QWidget):
         self._worker.error.connect(self._on_forecast_error)
         self._worker.start()
 
-    # --------------------------------------------------------- Callbacks
+    # gestionnaires des événements de fin de traitement
     def _on_forecast_done(self, point_forecast, quantile_forecast,
                           history_prices, K, T_total, horizon):
         """Appelée quand le ForecastWorker a terminé avec succès."""
@@ -258,15 +251,14 @@ class ForecastTimesFMTab(QWidget):
 
             option_type = self.option_type_combo.currentText()
 
-            # --- Extraire les séries ---
-            # point_forecast[0] → ndarray shape (horizon,)
+            # désérialisation des tenseurs de prévision
             pf = point_forecast[0]
-            # quantile_forecast[0] → ndarray shape (horizon, 10)
+            # extraction des bornes de l'intervalle de confiance
             qf = quantile_forecast[0]
-            q10 = qf[:, 0]    # quantile 10 %
-            q90 = qf[:, -1]   # quantile 90 %
+            q10 = qf[:, 0]
+            q90 = qf[:, -1]
 
-            # --- Repricing BSM jour par jour via la logique métier ---
+            # réévaluation quotidienne de la prime sur la base de la prévision
             pf, option_prices, deltas, hist_slice, hist_option_prices, hist_deltas, x_hist = \
                 self.forecast_logic.process_forecast_results(
                     point_forecast, history_prices, horizon, K, T_total, 
@@ -275,11 +267,11 @@ class ForecastTimesFMTab(QWidget):
             
             x_fc = np.arange(0, horizon)
 
-            # --- Tracé des 3 subplots ---
+            # génération dynamique de la grille de graphiques
             self.fig.clear()
             gs = self.fig.add_gridspec(2, 2, height_ratios=[1.2, 1])
 
-            # Historique 60 derniers jours + forecast
+            # continuité temporelle du spot
             ax1 = self.fig.add_subplot(gs[0, :])
 
             ax1.plot(x_hist, hist_slice, color="#3498db", linewidth=1.5,
@@ -288,7 +280,7 @@ class ForecastTimesFMTab(QWidget):
                      label="Forecast (point)")
             ax1.fill_between(x_fc, q10, q90, alpha=0.18, color="#e74c3c",
                              label="Intervalle q10–q90")
-            # Ligne de jonction
+            # raccordement visuel entre le réel et le prédictif
             ax1.plot([x_hist[-1], x_fc[0]],
                      [hist_slice[-1], pf[0]],
                      color="#e74c3c", linewidth=1, linestyle="--")
@@ -299,7 +291,7 @@ class ForecastTimesFMTab(QWidget):
             ax1.legend(fontsize=7, loc="upper left")
             ax1.grid(True, alpha=0.3)
 
-            # Prix de l'option reprojeté
+            # dégradation temporelle de la prime
             ax2 = self.fig.add_subplot(gs[1, 0])
             ax2.plot(x_hist, hist_option_prices, color="#3498db", linewidth=1.5, label="Historique (30j)")
             ax2.plot(x_fc, option_prices, color="#2ecc71", linewidth=2, label="Forecast")
@@ -315,7 +307,7 @@ class ForecastTimesFMTab(QWidget):
             ax2.legend(fontsize=7, loc="upper left")
             ax2.grid(True, alpha=0.3)
 
-            # Delta Forecast
+            # évolution de la sensibilité directionnelle
             ax3 = self.fig.add_subplot(gs[1, 1])
             ax3.plot(x_hist, hist_deltas, color="#3498db", linewidth=1.5, label="Historique (30j)")
             ax3.plot(x_fc, deltas, color="#9b59b6", linewidth=2, label="Forecast")
@@ -356,7 +348,7 @@ class ForecastTimesFMTab(QWidget):
             f"Le forecast a échoué :\n\n{error_msg}"
         )
 
-    # --------------------------------------------------------- Helpers
+    # fonctions utilitaires
     def _set_status(self, text: str, color: str):
         """Met à jour le label de statut avec une couleur de fond."""
         self.status_label.setText(text)

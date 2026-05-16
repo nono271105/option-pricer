@@ -1,9 +1,4 @@
-"""
-MarketDataStore — Source de vérité unique pour les données de marché partagées.
-
-Pattern pub/sub : chaque onglet s'abonne via subscribe() et reçoit
-automatiquement les mises à jour lorsque les données de marché changent.
-"""
+# Source de vérité unique pour les données de marché partagées entre tous les onglets, avec notification automatique par pub/sub
 
 import logging
 from typing import Optional, Callable, List

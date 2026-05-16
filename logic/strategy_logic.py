@@ -14,10 +14,7 @@ class StrategyManager:
     # =========================================================================
     # Définitions des stratégies
     # =========================================================================
-    # Chaque stratégie est une liste de legs.
-    # "strike_offset" est exprimé en % du spot (ex: +0.05 = +5% OTM).
-    # "strike_offset_2" pour les condors (4ème leg).
-    # Les spreads ont un "width" en % qui définit l'écart entre les deux strikes.
+    # dictionnaire de composition des stratégies, où l'offset définit l'écartement des strikes par rapport au spot
 
     STRATEGY_DEFINITIONS: Dict[str, List[Dict]] = {
         #  Positions de base 
@@ -162,7 +159,7 @@ class StrategyManager:
         for leg_def in definition:
             strike = math.ceil(S * (1 + leg_def["offset"]))
 
-            # Récupération de la prime : yfinance d'abord, fallback BSM
+            # valorisation hybride de la jambe : extraction de la cotation réelle ou pricing théorique si illiquide
             premium = self._get_premium(
                 ticker, S, strike, T, r, sigma, q,
                 leg_def["type"], maturity_datetime,
@@ -195,7 +192,7 @@ class StrategyManager:
             logger.warning("Prime marché indisponible pour %s %s K=%s, fallback BSM: %s",
                            ticker, option_type, strike, exc)
 
-        # Fallback BSM — use the current spot price, not the strike
+        # si la cotation n'est pas fiable, on simule le prix théorique exact
         return option_models.black_scholes_price(S=S_current, K=strike, T=T,
                               r=r, sigma=sigma, q=q,
                               option_type=option_type)
@@ -262,27 +259,27 @@ class StrategyManager:
         Returns:
             Dict avec clés : cost, breakevens, max_gain, max_loss
         """
-        # Coût total (net debit/credit)
+        # calcul de l'investissement initial
         cost = sum(
             leg["premium"] if leg["position"] == "long" else -leg["premium"]
             for leg in legs
         )
 
-        # Breakevens : points où le payoff change de signe
+        # détermination des points morts
         breakevens = []
         for i in range(len(payoff) - 1):
             if payoff[i] * payoff[i + 1] < 0:
-                # Interpolation linéaire
+                # interpolation linéaire pour affiner la précision
                 be = S_range[i] + (0 - payoff[i]) * (S_range[i+1] - S_range[i]) / (payoff[i+1] - payoff[i])
                 breakevens.append(round(float(be), 2))
 
         breakevens = sorted(set(breakevens))
 
-        # Gain max et perte max sur la plage calculée
+        # extraction des bornes de rentabilité théorique
         max_gain = float(np.max(payoff))
         max_loss = float(np.min(payoff))
 
-        # Si le payoff continue de croître aux extrémités → illimité
+        # détection du risque ou gain asymétrique illimité
         if payoff[-1] > payoff[-2] or payoff[0] > payoff[1]:
             max_gain = np.inf
         if payoff[-1] < payoff[-2] or payoff[0] < payoff[1]:

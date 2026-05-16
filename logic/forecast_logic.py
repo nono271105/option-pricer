@@ -23,7 +23,7 @@ class ForecastLogic:
         import yfinance as yf
         import timesfm
 
-        # Détection automatique du device (TimesFM le gère nativement en interne)
+        # basculement matériel transparent opéré par le modèle
         if torch.cuda.is_available():
             logger.info("[Forecast] CUDA détecté — TimesFM utilisera le GPU (%s).", torch.cuda.get_device_name(0))
         else:

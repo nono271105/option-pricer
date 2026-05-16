@@ -1,7 +1,4 @@
-"""
-UI/simulation_ui.py
-Onglet Simulation
-"""
+# Interface de simulation de portefeuille par variation matricielle des paramètres
 
 from typing import Optional
 from datetime import date
@@ -19,7 +16,7 @@ from logic.bsm_logic import OptionModels
 from logic.simulation_logic import SimulationLogic
 
 
-# Couleur de fond pour les champs non-modifiables (lecture seule)
+# définition du thème visuel pour les champs immuables
 _READONLY_BG = "background-color: #2b2b2b; color: #888888;"
 
 
@@ -38,22 +35,22 @@ class CallPriceSimulationTab(QWidget):
         self._build_ui()
 
     
-    # Construction de l'interface
+    # assemblage des composants graphiques
     
     def _build_ui(self) -> None:
-        # Layout racine vertical : rangée du haut + tableau pleine largeur en bas
+        # disposition structurelle de la fenêtre principale
         root_layout = QVBoxLayout(self)
 
-        # ── Rangée du haut : panneau gauche + panneau droit ────────────────
+        # segmentation du bandeau supérieur
         top_row = QHBoxLayout()
 
-        # PANNEAU GAUCHE — paramètres de la simulation
+        # zone de saisie des conditions initiales
         left_layout = QVBoxLayout()
 
         params_group = QGroupBox("Paramètres de la simulation")
         params_form = QFormLayout()
 
-        # Infos marché (lecture seule)
+        # affichage des données financières de référence
         self.company_name_label = QLabel("N/A")
         params_form.addRow("Entreprise:", self.company_name_label)
 
@@ -63,24 +60,24 @@ class CallPriceSimulationTab(QWidget):
         self.S_display_label = QLabel("N/A")
         params_form.addRow("Prix Actuel (S):", self.S_display_label)
 
-        # Type d'option
+        # sens de la position
         self.option_type_combo = QComboBox()
         self.option_type_combo.addItems(["call", "put"])
         params_form.addRow("Type d'option:", self.option_type_combo)
 
-        # Strike (modifiable)
+        # niveau de déclenchement
         self.strike_input = QLineEdit("100.00")
         self.strike_input.setValidator(QDoubleValidator(0.0, 100000.0, 2))
         params_form.addRow("Prix d'exercice (K):", self.strike_input)
 
-        # Date d'échéance (modifiable)
+        # horizon temporel de la simulation
         from utils import get_default_maturity_date
         self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
         params_form.addRow("Date d'échéance:", self.maturity_date_input)
 
-        # Bouton
+        # déclenchement de la matrice de calcul
         self.simulate_button = QPushButton("Lancer la Simulation")
         self.simulate_button.clicked.connect(self.run_simulation)
         params_form.addRow(self.simulate_button)
@@ -90,42 +87,42 @@ class CallPriceSimulationTab(QWidget):
         left_layout.addStretch(1)
         top_row.addLayout(left_layout, 1)
 
-        # PANNEAU DROIT — plages de la simulation
+        # zone de définition des scénarios de stress
         right_layout = QVBoxLayout()
 
         ranges_group = QGroupBox("Plages de la simulation")
         ranges_form = QFormLayout()
 
-        # Volatilité min — lecture seule (grisée)
+        # borne inférieure du choc de volatilité
         self.vol_min_display = QLineEdit()
         self.vol_min_display.setReadOnly(True)
         self.vol_min_display.setStyleSheet(_READONLY_BG)
         ranges_form.addRow("Volatilité −15 bps (%):", self.vol_min_display)
 
-        # Volatilité max — lecture seule (grisée)
+        # borne supérieure du choc de volatilité
         self.vol_max_display = QLineEdit()
         self.vol_max_display.setReadOnly(True)
         self.vol_max_display.setStyleSheet(_READONLY_BG)
         ranges_form.addRow("Volatilité +15 bps (%):", self.vol_max_display)
 
-        # Pas volatilité — modifiable
+        # résolution de la grille de volatilité
         self.vol_step_input = QLineEdit("1")
         self.vol_step_input.setValidator(QIntValidator(1, 10))
         ranges_form.addRow("Pas Volatilité (%):", self.vol_step_input)
 
-        # Prix sous-jacent min — lecture seule (grisée)
+        # borne inférieure du choc directionnel
         self.underlying_min_display = QLineEdit()
         self.underlying_min_display.setReadOnly(True)
         self.underlying_min_display.setStyleSheet(_READONLY_BG)
         ranges_form.addRow("Prix Sous-jacent −10%:", self.underlying_min_display)
 
-        # Prix sous-jacent max — lecture seule (grisée)
+        # borne supérieure du choc directionnel
         self.underlying_max_display = QLineEdit()
         self.underlying_max_display.setReadOnly(True)
         self.underlying_max_display.setStyleSheet(_READONLY_BG)
         ranges_form.addRow("Prix Sous-jacent +10%:", self.underlying_max_display)
 
-        # Pas prix sous-jacent — modifiable
+        # résolution de la grille directionnelle
         self.underlying_step_input = QLineEdit("5")
         self.underlying_step_input.setValidator(QIntValidator(1, 1000))
         ranges_form.addRow("Pas Prix Sous-jacent:", self.underlying_step_input)
@@ -137,7 +134,7 @@ class CallPriceSimulationTab(QWidget):
 
         root_layout.addLayout(top_row)
 
-        # ── Tableau de résultats — pleine largeur ──────────────────────────
+        # restitution spatiale de la matrice de rentabilité
         results_group = QGroupBox("Résultats de la Simulation (Volatilité (%) Vs Prix Sous-jacent)")
         results_layout = QVBoxLayout()
 
@@ -151,7 +148,7 @@ class CallPriceSimulationTab(QWidget):
         root_layout.addWidget(results_group, 1)
 
     
-    # Mise à jour des données financières
+    # synchronisation de l'état avec le modèle de données global
     
     def update_financial_data(self, ticker, S, r, q, historical_vol) -> None:
         self.ticker_symbol = ticker
@@ -188,17 +185,17 @@ class CallPriceSimulationTab(QWidget):
             self.underlying_max_display.setText("N/A")
 
     
-    # Coloration heatmap
+    # interpolation chromatique pour la matrice de résultats
     
     def _color_for_value(self, value: float, min_val: float, max_val: float) -> QColor:
         if max_val == min_val:
             return QColor(128, 128, 0)
         normalized = (value - min_val) / (max_val - min_val)
-        hue = int(120 * (1 - normalized))  # 120 = vert, 0 = rouge
+        hue = int(120 * (1 - normalized))
         return QColor.fromHsv(hue, 255, 200)
 
     
-    # Simulation
+    # exécution du pipeline d'évaluation stochastique
     
     def run_simulation(self) -> None:
         if (not self.ticker_symbol or self.ticker_symbol == "N/A"
@@ -227,7 +224,7 @@ class CallPriceSimulationTab(QWidget):
                                     "La date d'échéance doit être dans le futur.")
                 return
 
-            option_type = self.option_type_combo.currentText()  # 'call' ou 'put'
+            option_type = self.option_type_combo.currentText()
 
             vol_min_txt = self.vol_min_display.text()
             vol_max_txt = self.vol_max_display.text()

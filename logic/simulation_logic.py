@@ -56,7 +56,7 @@ class SimulationLogic:
         for i, vol_percent in enumerate(volatilities_percent):
             sigma = vol_percent / 100.0
             for j, S in enumerate(underlying_prices):
-                # Appel au moteur Black-Scholes-Merton (bsm_logic.py)
+                # valorisation unitaire via le modèle BSM
                 price = self.option_models.black_scholes_price(
                     S=float(S),
                     K=K,

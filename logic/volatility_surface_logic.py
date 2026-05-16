@@ -1,13 +1,4 @@
-"""
-Module pour calculer et extraire la surface de volatilité implicite.
-Surface 3D : X = Strike, Y = Maturity, Z = Implied Volatility
-
-Méthodologie :
-  1. Convention OTM-only (puts K<S, calls K≥S) — options les plus liquides
-  2. Filtrage de liquidité (bid>0, ask>0, spread raisonnable, volume/OI)
-  3. Filtrage par moneyness (±30% autour du spot)
-  4. Calcul de l'IV par inversion BSM depuis le mid-price (bid+ask)/2
-"""
+# Pipeline de construction et d'interpolation de la surface 3D de volatilité implicite
 
 import logging
 import numpy as np
@@ -22,9 +13,7 @@ from logic.bsm_logic import OptionModels
 
 logger = logging.getLogger(__name__)
 
-# ═══════════════════════════════════════════════════════════════════
-# CONFIGURATION (ex iv_surface_config.py — constantes inlinées)
-# ═══════════════════════════════════════════════════════════════════
+# constantes de configuration du modèle d'extraction
 NUM_EXPIRATIONS = 20
 MAX_DAYS_TO_MATURITY = 400
 MIN_STRIKES_REQUIRED = 5
@@ -99,13 +88,13 @@ class ImpliedVolatilitySurface:
         if mid_price <= 0 or T <= 0 or S <= 0 or K <= 0:
             return None
 
-        # Vérifier que le prix est supérieur à la valeur intrinsèque
+        # contrôle de validité de l'option (le prix doit refléter la prime de temps)
         if option_type == 'call':
             intrinsic = max(0, S * np.exp(-q * T) - K * np.exp(-r * T))
         else:
             intrinsic = max(0, K * np.exp(-r * T) - S * np.exp(-q * T))
 
-        if mid_price < intrinsic * 0.95:  # marge de 5% pour le bruit de marché
+        if mid_price < intrinsic * 0.95:  # application d'une tolérance pour absorber le bruit de spread
             return None
 
         def objective(sigma):
@@ -122,7 +111,7 @@ class ImpliedVolatilitySurface:
                 IV_MIN_THRESHOLD, IV_MAX_THRESHOLD,
                 xtol=1e-6, maxiter=100,
             )
-            # Rejeter les IV aberrantes
+            # exclusion des résultats hors spectre de marché
             if iv < IV_MIN_THRESHOLD or iv > IV_MAX_THRESHOLD:
                 return None
             return iv
@@ -155,7 +144,7 @@ class ImpliedVolatilitySurface:
                 logger.warning("Aucune date d'expiration trouvée pour %s", ticker_symbol)
                 return {}
             
-            # Limiter au nombre configuré d'expirations
+            # troncature temporelle de la profondeur d'analyse
             expirations = expirations[:NUM_EXPIRATIONS]
             
             option_chains = {}
@@ -202,7 +191,7 @@ class ImpliedVolatilitySurface:
         Returns:
             DataFrame avec colonnes: ['Strike', 'Days_to_Maturity', 'IV', 'Option_Type', 'Mid_Price']
         """
-        # Récupérer le prix actuel si non fourni
+        # acquisition dynamique du spot en cas d'absence
         if current_price is None:
             current_price = self.data_fetcher.get_live_price(ticker_symbol)
             if current_price is None:
@@ -212,7 +201,7 @@ class ImpliedVolatilitySurface:
         logger.info("Prix actuel de %s: $%.2f", ticker_symbol, current_price)
         logger.info("Paramètres: r=%.4f, q=%.4f", current_rate, current_dividend)
         
-        # Bornes de moneyness
+        # définition de la fenêtre de pertinence autour de la monnaie
         K_min = current_price * MONEYNESS_MIN
         K_max = current_price * MONEYNESS_MAX
         logger.info(
@@ -220,7 +209,7 @@ class ImpliedVolatilitySurface:
             K_min, K_max, MONEYNESS_MIN * 100, MONEYNESS_MAX * 100,
         )
         
-        # Récupérer les chaînes d'options
+        # requête globale sur l'ensemble de la nappe d'échéances
         option_chains = self.get_option_chains_multiple_expirations(ticker_symbol)
         if not option_chains:
             logger.warning("Aucune chaîne d'options récupérée")
@@ -243,16 +232,14 @@ class ImpliedVolatilitySurface:
                 exp_date = datetime.strptime(exp_date_str, '%Y-%m-%d').date()
                 days_to_maturity = (exp_date - today).days
                 
-                # Ignorer les expirations du jour ou passées
+                # filtrage des maturités expirées ou trop proches
                 if days_to_maturity <= 1:
                     stats['expired'] += 1
                     continue
                 
                 T = days_to_maturity / 365.0
                 
-                # ── Convention OTM-only ─────────────────────────────────
-                # Puts OTM (K < S) : plus liquides que les calls ITM
-                # Calls OTM (K ≥ S) : plus liquides que les puts ITM
+                # isolation systématique des options hors de la monnaie pour maximiser la liquidité
                 otm_segments = [
                     ('put',  opt_chain.puts,  lambda k: k < current_price),
                     ('call', opt_chain.calls, lambda k: k >= current_price),
@@ -281,7 +268,7 @@ class ImpliedVolatilitySurface:
                         volume = row.get('volume', 0)
                         oi = row.get('openInterest', 0)
                         
-                        # Coerce NaN to 0
+                        # standardisation numérique des valeurs manquantes
                         bid = float(bid) if pd.notna(bid) else 0.0
                         ask = float(ask) if pd.notna(ask) else 0.0
                         volume = int(volume) if pd.notna(volume) else 0
@@ -370,25 +357,25 @@ class ImpliedVolatilitySurface:
         Returns:
             Tuple: (X_grid, Y_grid, Z_grid) pour plotly
         """
-        # Points source
+        # extraction de l'échantillon brut
         points = surface_data[['Strike', 'Days_to_Maturity']].values
         values = surface_data['IV'].values
         
-        # Bornes des données
+        # identification de l'enveloppe spatiale
         strike_min, strike_max = surface_data['Strike'].min(), surface_data['Strike'].max()
         maturity_min, maturity_max = (
             surface_data['Days_to_Maturity'].min(),
             surface_data['Days_to_Maturity'].max()
         )
         
-        # Padding léger (5%) avec clamp sur des valeurs financièrement raisonnables
+        # marges d'interpolation avec respect des contraintes financières
         strike_range = strike_max - strike_min
         maturity_range = maturity_max - maturity_min
         
         strike_min -= strike_range * 0.05
         strike_max += strike_range * 0.05
 
-        # Clamper strike_min à une valeur raisonnable (>0, ≥ 50% du spot)
+        # sécurisation de la borne inférieure du sous-jacent
         floor = current_price * 0.5 if current_price else 1.0
         strike_min = max(floor, strike_min)
         
@@ -399,7 +386,7 @@ class ImpliedVolatilitySurface:
         Y_grid = np.linspace(maturity_min, maturity_max, maturity_grid_size)
         X_mesh, Y_mesh = np.meshgrid(X_grid, Y_grid)
         
-        # Interpoler avec griddata (cubique pour une surface lisse)
+        # lissage de la nappe par interpolation cubique
         Z_mesh = griddata(
             points, 
             values, 
@@ -407,7 +394,7 @@ class ImpliedVolatilitySurface:
             method='cubic'
         )
         
-        # Remplir les NaN avec nearest neighbor
+        # correction des lacunes par l'approche du plus proche voisin
         mask_nan = np.isnan(Z_mesh)
         if mask_nan.any():
             Z_mesh[mask_nan] = griddata(
@@ -417,11 +404,7 @@ class ImpliedVolatilitySurface:
                 method='nearest'
             )
 
-        # Remplacer les valeurs <= 0 par nearest neighbor
-        # Une IV négative ou nulle est impossible financièrement — elle résulte
-        # d'une extrapolation cubique en dehors de la convexe des données.
-        # On corrige par le point de données réel le plus proche plutôt que
-        # de laisser un trou ou une valeur aberrante dans la surface.
+        # redressement des aberrations mathématiques générées aux frontières de l'interpolation
         mask_invalid = Z_mesh <= 0
         if mask_invalid.any():
             Z_mesh[mask_invalid] = griddata(
@@ -464,14 +447,14 @@ class ImpliedVolatilitySurface:
         """
         logger.info("Extraction de la surface IV pour %s...", ticker_symbol)
         
-        # Extraire les données brutes (déjà filtrées et nettoyées par le pipeline)
+        # récupération de l'échantillon pré-traité
         surface_data = self.extract_iv_surface_data(
             ticker_symbol, current_price, current_rate, current_dividend,
         )
         if surface_data is None or surface_data.empty:
             return None, None
         
-        # Filtrer par nombre max de jours (configurable)
+        # application du seuil de troncature temporelle
         surface_data = surface_data[
             surface_data['Days_to_Maturity'] <= MAX_DAYS_TO_MATURITY
         ].copy()

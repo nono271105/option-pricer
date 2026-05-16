@@ -1,7 +1,4 @@
-"""
-UI/strategy_ui.py
-Onglet Stratégies
-"""
+# Interface d'assemblage et d'analyse de combinaisons optionnelles complexes
 
 from __future__ import annotations
 
@@ -28,9 +25,7 @@ from logic.bsm_logic import OptionModels
 from logic.strategy_logic import StrategyManager
 
 
-# =============================================================================
-# Worker QThread — récupération des primes + calculs en arrière-plan
-# =============================================================================
+# thread de délégation pour la valorisation hybride de stratégies multi-jambes
 
 class StrategyWorker(QThread):
     """Récupère les primes de marché et calcule toutes les métriques."""
@@ -79,9 +74,7 @@ class StrategyWorker(QThread):
             self.error_occurred.emit(str(exc))
 
 
-# =============================================================================
-# Canvas Matplotlib : payoff à maturité + valeur aujourd'hui
-# =============================================================================
+# gestionnaire de rendu pour les profils de risque asymétriques
 
 class StrategyCanvas(FigureCanvas):
 
@@ -115,7 +108,7 @@ class StrategyCanvas(FigureCanvas):
         S           = result["S"]
         metrics     = result["metrics"]
 
-        # 1. Payoff à maturité
+        # tracé de l'exposition au risque terminal
         ax = self.ax_payoff
         ax.plot(S_range, payoff, color="#1f77b4", lw=2, label="Payoff à maturité")
         ax.fill_between(S_range, payoff, 0,
@@ -125,7 +118,7 @@ class StrategyCanvas(FigureCanvas):
         ax.axhline(0, color="black", lw=0.8)
         ax.axvline(S, color="red", lw=1.2, ls="--", label=f"S₀ = {S:.2f}")
 
-        # Breakevens
+        # matérialisation des seuils de rentabilité
         for be in metrics.get("breakevens", []):
             ax.axvline(be, color="orange", lw=1.0, ls=":",
                        label=f"BE = {be:.2f}")
@@ -135,7 +128,7 @@ class StrategyCanvas(FigureCanvas):
         ax.set_ylabel("P&L ($)", fontsize=8)
         ax.legend(fontsize=7, loc="best")
 
-        # 2. Valeur actuelle avec valeur temps
+        # tracé de la valorisation dynamique incluant la prime de risque
         ax = self.ax_value
         ax.plot(S_range, value_today, color="#2ca02c", lw=2,
                 label="Valeur actuelle (avec valeur temps)")
@@ -156,16 +149,14 @@ class StrategyCanvas(FigureCanvas):
         self.fig.canvas.draw_idle()
 
 
-# =============================================================================
-# Onglet principal
-# =============================================================================
+# construction du panneau central d'ingénierie de portefeuille
 
 class StrategyTab(QWidget):
     """
     Onglet Stratégies — structure identique à CRRModelTab.
     """
 
-    # Familles et stratégies disponibles
+    # taxonomie des structures optionnelles supportées
     FAMILIES: Dict[str, List[str]] = {
         "Positions de base": [
             "Long Call", "Short Call", "Long Put", "Short Put",
@@ -199,7 +190,7 @@ class StrategyTab(QWidget):
         self.manager       = StrategyManager()
         self._worker: Optional[StrategyWorker] = None
 
-        # Données marché
+        # isolation locale des conditions macroéconomiques
         self._S:      Optional[float] = None
         self._r:      Optional[float] = None
         self._q:      Optional[float] = None
@@ -209,17 +200,15 @@ class StrategyTab(QWidget):
         self._build_ui()
         store.subscribe(self.on_market_update)
 
-    # =========================================================================
-    # Construction de l'UI
-    # =========================================================================
+    # assemblage des composants graphiques
 
     def _build_ui(self):
         main_layout = QHBoxLayout(self)
 
-        # Panneau gauche
+        # zone de définition structurelle
         left_layout = QVBoxLayout()
 
-        # Groupe Stratégie 
+        # bloc de sélection du sous-jacent et du modèle 
         strat_group = QGroupBox("Paramètres de la stratégie")
         strat_form  = QFormLayout()
         strat_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
@@ -248,7 +237,7 @@ class StrategyTab(QWidget):
         strat_group.setLayout(strat_form)
         left_layout.addWidget(strat_group)
 
-        # Boutons
+        # commandes d'exécution
         self.fetch_data_button = QPushButton("Récupérer/Synchroniser les Données")
         self.fetch_data_button.clicked.connect(self._fetch_data)
         left_layout.addWidget(self.fetch_data_button)
@@ -257,7 +246,7 @@ class StrategyTab(QWidget):
         self.calculate_button.clicked.connect(self._on_calculate)
         left_layout.addWidget(self.calculate_button)
 
-        # Tableau des legs
+        # restitution détaillée de la composition des jambes
         legs_group  = QGroupBox("Legs de la stratégie")
         legs_layout = QVBoxLayout(legs_group)
         self.legs_table = QTableWidget(0, 4)
@@ -271,10 +260,10 @@ class StrategyTab(QWidget):
         left_layout.addStretch(1)
         main_layout.addLayout(left_layout, 1)
 
-        # Panneau droit 
+        # zone d'analyse et de restitution des métriques 
         right_layout = QVBoxLayout()
 
-        # Données actuelles
+        # rappel du contexte de marché
         data_group  = QGroupBox("Données Actuelles")
         data_layout = QFormLayout()
         self.live_price_label = QLabel("N/A")
@@ -288,7 +277,7 @@ class StrategyTab(QWidget):
         data_group.setLayout(data_layout)
         right_layout.addWidget(data_group)
 
-        # Métriques
+        # synthèse des indicateurs de performance et de risque
         metrics_group  = QGroupBox("Métriques de la stratégie")
         metrics_grid   = QGridLayout(metrics_group)
 
@@ -318,7 +307,7 @@ class StrategyTab(QWidget):
 
         right_layout.addWidget(metrics_group)
 
-        # Grecs agrégés
+        # consolidation des sensibilités dynamiques
         greeks_group = QGroupBox("Grecs de la stratégie (BSM agrégés)")
         greeks_grid  = QGridLayout(greeks_group)
         self.greeks_table = QTableWidget(1, 5)
@@ -332,7 +321,7 @@ class StrategyTab(QWidget):
         greeks_grid.addWidget(self.greeks_table, 0, 0)
         right_layout.addWidget(greeks_group)
 
-        # Graphiques
+        # intégration de la visualisation des profils de gain
         plot_group  = QGroupBox("Visualisation")
         plot_layout = QVBoxLayout(plot_group)
         self.canvas = StrategyCanvas(self)
@@ -341,21 +330,17 @@ class StrategyTab(QWidget):
 
         main_layout.addLayout(right_layout, 2)
 
-        # Initialise le combo stratégies
+        # amorçage de l'interface sur la première famille
         self._on_family_changed()
 
-    # =========================================================================
-    # Logique famille → stratégies
-    # =========================================================================
+    # gestionnaire de dépendance des listes déroulantes
 
     def _on_family_changed(self):
         family = self.family_combo.currentText()
         self.strategy_combo.clear()
         self.strategy_combo.addItems(self.FAMILIES.get(family, []))
 
-    # =========================================================================
-    # Fetch données marché
-    # =========================================================================
+    # routines d'acquisition et de synchronisation des flux de prix
 
     def _fetch_data(self):
         ticker = self.ticker_input.text().strip().upper()
@@ -390,9 +375,7 @@ class StrategyTab(QWidget):
         self.fetch_data_button.setEnabled(True)
         self.fetch_data_button.setText("Récupérer/Synchroniser les Données")
 
-    # =========================================================================
-    # Lancement du calcul
-    # =========================================================================
+    # orchestration de la chaîne de valorisation
 
     def _on_calculate(self):
         if self._S is None or self._r is None or self._q is None or self._sigma is None:
@@ -437,16 +420,14 @@ class StrategyTab(QWidget):
         self._worker.finished.connect(self._reset_button)
         self._worker.start()
 
-    # =========================================================================
-    # Callbacks
-    # =========================================================================
+    # gestionnaires d'événements post-calcul
 
     def _on_result(self, result: dict):
         legs    = result["legs"]
         metrics = result["metrics"]
         greeks  = result["greeks"]
 
-        # Tableau des legs
+        # rafraîchissement de la vue détaillée des positions
         self.legs_table.setRowCount(len(legs))
         for row, leg in enumerate(legs):
             type_item = QTableWidgetItem(leg["option_type"].capitalize())
@@ -454,7 +435,7 @@ class StrategyTab(QWidget):
             k_item    = QTableWidgetItem(f"{leg['strike']:.2f}")
             p_item    = QTableWidgetItem(f"{leg['premium']:.4f}")
 
-            # Couleur selon position
+            # codage couleur sémantique du sens de l'exposition
             bg_pos  = QColor("#70E672") if leg["position"] == "long" else QColor("#FF6464")
             bg_type = QColor("#7CBFFE") if leg["option_type"] == "call" else QColor("#FBD28B")
 
@@ -469,7 +450,7 @@ class StrategyTab(QWidget):
             self.legs_table.setItem(row, 2, k_item)
             self.legs_table.setItem(row, 3, p_item)
 
-        # Métriques
+        # formatage et affichage des bornes de rentabilité
         cost = metrics["cost"]
         self.cost_label.setText(f"${cost:.2f}")
         self.cost_label.setStyleSheet(
@@ -492,7 +473,7 @@ class StrategyTab(QWidget):
         self.loss_label.setText(loss_txt)
         self.loss_label.setStyleSheet("font-size:14px;font-weight:bold;color:#A32D2D")
 
-        # Grecs agrégés
+        # mise à jour de la grille des sensibilités combinées
         greek_keys = ["delta", "gamma", "theta", "vega", "rho"]
         for col, key in enumerate(greek_keys):
             val = greeks.get(key, 0)
@@ -502,7 +483,7 @@ class StrategyTab(QWidget):
                 item.setForeground(QColor("#3B6D11") if val >= 0 else QColor("#A32D2D"))
             self.greeks_table.setItem(0, col, item)
 
-        # Graphiques
+        # déclenchement du rendu visuel de la stratégie
         strategy_name = self.strategy_combo.currentText()
         self.canvas.plot(result, strategy_name)
 

@@ -1,7 +1,4 @@
-"""
-gui_app.py
-Instancie le MarketDataStore, les 8 tabs UI, et le QTabWidget.
-"""
+# Point d'entrée de l'interface graphique : orchestre le MarketDataStore et les onglets
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QTabWidget, QMessageBox,
@@ -66,7 +63,7 @@ class OptionPricingApp(QWidget):
         """Initialise l'interface utilisateur principale."""
         self.tab_widget = QTabWidget()
 
-        # Instancier les 8 tabs avec le store et la callback fetch
+        # Initialisation des onglets en leur passant le store et la fonction de rafraîchissement
         self.bsm_tab = BSMTab(self.store, fetch_fn=self.fetch_data_for_tab)
         self.crr_tab = CRRModelTab(self.store, fetch_fn=self.fetch_data_for_tab)
         self.simulation_tab = CallPriceSimulationTab()
@@ -76,7 +73,7 @@ class OptionPricingApp(QWidget):
         self.strategy_tab = StrategyTab(self.store, fetch_fn=self.fetch_data_for_tab)
         self.forecast_tab = ForecastTimesFMTab()
 
-        # Ajouter les tabs au widget
+        # intégration des onglets dans le conteneur principal
         self.tab_widget.addTab(self.bsm_tab, "Modèle BSM")
         self.tab_widget.addTab(self.crr_tab, "Modèle CRR")
         self.tab_widget.addTab(self.simulation_tab, "Simulation")
@@ -90,7 +87,7 @@ class OptionPricingApp(QWidget):
         main_window_layout.addWidget(self.tab_widget)
         self.setLayout(main_window_layout)
 
-        # Fetch initial
+        # Chargement des données par défaut au démarrage
         self.fetch_data_for_tab("AAPL", self.bsm_tab)
 
     def fetch_data_for_tab(self, ticker_symbol: str, source_tab: QWidget) -> None:
@@ -102,12 +99,12 @@ class OptionPricingApp(QWidget):
             QMessageBox.warning(self, "Erreur", "Veuillez entrer un symbole de ticker.")
             return
 
-        # Désactiver le bouton pendant le chargement
+        # On empêche les clics multiples pendant le traitement
         if hasattr(source_tab, 'fetch_data_button'):
             source_tab.fetch_data_button.setEnabled(False)
             source_tab.fetch_data_button.setText("⏳ Chargement...")
 
-        # Lancer un worker dans un QThread
+        # L'appel réseau est asynchrone pour ne pas geler l'interface
         self._fetch_worker = FetchDataWorker(self.data_fetcher, ticker_symbol)
         self._fetch_worker.data_ready.connect(
             lambda tk, price, sofr, div, vol, company_name: self._on_fetch_done(
@@ -128,7 +125,7 @@ class OptionPricingApp(QWidget):
                 QMessageBox.warning(self, "Données Manquantes",
                     f"Impossible de récupérer le prix de {ticker}.")
 
-            # Le store notifie automatiquement les 8 tabs
+            # Le MarketDataStore notifie ensuite ses abonnés de la mise à jour
             self.store.update(
                 ticker=ticker,
                 S=S,
@@ -140,8 +137,7 @@ class OptionPricingApp(QWidget):
                 pricing_method="Vol Historique",
             )
 
-            # Les tabs qui ont update_financial_data/update_financial_params
-            # mais pas encore le store (simulation, smile, surface, forecast)
+            # Synchronisation explicite pour les onglets non connectés au store
             sigma_to_use = hist_vol
             pricing_method = "Vol Historique"
 
@@ -161,7 +157,7 @@ class OptionPricingApp(QWidget):
                 self.forecast_tab.update_financial_params(ticker, S, r, q, sigma_to_use)
                 self.forecast_tab.update_company_name(company_name or ticker)
 
-            # Réactiver le bouton du tab source
+            # Restauration de l'état du bouton après traitement
             if hasattr(source_tab, 'fetch_data_button'):
                 source_tab.fetch_data_button.setEnabled(True)
                 source_tab.fetch_data_button.setText("Récupérer/Synchroniser les Données")

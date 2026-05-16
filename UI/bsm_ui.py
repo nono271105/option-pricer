@@ -1,7 +1,4 @@
-"""
-UI/bsm_ui.py
-Onglet BSM (Black-Scholes-Merton)
-"""
+# Onglet principal d'évaluation des options européennes via Black-Scholes-Merton
 
 from __future__ import annotations
 
@@ -53,7 +50,7 @@ class BSMTab(QWidget):
         self.option_models = OptionModels()
         self.strategy_manager = StrategyManager()
 
-        # État local pour les calculs
+        # état interne du composant pour la persistance des paramètres
         self.S = None
         self.r = None
         self.q = None
@@ -71,7 +68,7 @@ class BSMTab(QWidget):
     def _build_ui(self):
         main_layout = QHBoxLayout(self)
 
-        # --- Panneau de contrôle gauche ---
+        # construction de la barre d'outils latérale
         control_panel_layout = QVBoxLayout()
         control_panel_group = QGroupBox("Paramètres de l'option (BSM)")
         control_form_layout = QFormLayout()
@@ -115,7 +112,7 @@ class BSMTab(QWidget):
         control_panel_layout.addStretch(1)
         main_layout.addLayout(control_panel_layout, 1)
 
-        # --- Panneau d'affichage droite ---
+        # construction de la zone de visualisation principale
         display_panel_layout = QVBoxLayout()
 
         current_data_group = QGroupBox("Données Actuelles")
@@ -159,9 +156,7 @@ class BSMTab(QWidget):
 
         main_layout.addLayout(display_panel_layout, 2)
 
-    # =========================================================================
-    # Fetch data
-    # =========================================================================
+    # récupération asynchrone des conditions de marché
 
     def _fetch_data(self):
         ticker = self.ticker_input.text().strip().upper()
@@ -170,9 +165,7 @@ class BSMTab(QWidget):
             return
         self._fetch_fn(ticker, self)
 
-    # =========================================================================
-    # MarketDataStore — pub/sub
-    # =========================================================================
+    # synchronisation réactive avec le bus de données
 
     def on_market_update(self, store) -> None:
         """Appelé automatiquement quand le store est mis à jour."""
@@ -197,9 +190,7 @@ class BSMTab(QWidget):
         self.fetch_data_button.setEnabled(True)
         self.fetch_data_button.setText("Récupérer les Données")
 
-    # =========================================================================
-    # calculate_option_metrics 
-    # =========================================================================
+    # évaluation théorique et extraction des sensibilités
 
     def calculate_option_metrics(self):
         try:
@@ -266,7 +257,7 @@ class BSMTab(QWidget):
             self.greeks_table.setItem(0, 3, QTableWidgetItem(f"{greeks.get('vega', 0)/100:.4f}"))
             self.greeks_table.setItem(0, 4, QTableWidgetItem(f"{greeks.get('rho', 0):.4f}"))
 
-            # Mettre à jour le store avec la nouvelle volatilité
+            # propagation de la volatilité implicite aux autres composants
             self.store.update(sigma=sigma, pricing_method=self.pricing_method)
 
         except ValueError:
@@ -274,9 +265,7 @@ class BSMTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erreur de Calcul", f"Une erreur inattendue est survenue: {e}")
 
-    # =========================================================================
-    # _draw_payoff  utilitaire partagé 
-    # =========================================================================
+    # routine de tracé du profil de rentabilité à échéance
 
     def _draw_payoff(self, ax, K, premium, option_type, position):
         S_min = max(0, K * 0.7)
@@ -291,9 +280,7 @@ class BSMTab(QWidget):
         ax.grid(True)
         ax.legend()
 
-    # =========================================================================
-    # plot_option_payoff
-    # =========================================================================
+    # génération de la visualisation des points morts
 
     def plot_option_payoff(self):
         try:
@@ -343,9 +330,7 @@ class BSMTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erreur de Tracé", f"Une erreur est survenue lors du tracé du payoff: {e}")
 
-    # =========================================================================
-    # Greek évolution
-    # =========================================================================
+    # analyse de la dynamique des sensibilités par rapport au spot
 
     def handle_greek_click(self, row, column):
         greek_names = ["Delta", "Gamma", "Theta", "Vega", "Rho"]

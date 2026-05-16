@@ -1,9 +1,4 @@
-"""
-logic/ — Modules de calcul (logique métier) pour chaque onglet.
-
-Réexporte les classes publiques pour un accès simplifié :
-    from logic import OptionModels, CRRModels, StrategyManager, ...
-"""
+# Exposition centralisée des moteurs de calcul et de la logique métier
 
 from logic.bsm_logic import OptionModels
 from logic.crr_logic import CRRModels

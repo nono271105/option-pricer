@@ -15,7 +15,7 @@ class DataFetcher:
 
     def get_live_price(self, ticker_symbol: str) -> Optional[float]:
         """Récupère le prix en direct du dernier jour de trading."""
-        # Vérifier le cache d'abord
+        # cache consulté en premier pour éviter un appel réseau inutile
         cache_key = f"live_price_{ticker_symbol}"
         cached_price = global_cache.get(cache_key)
         if cached_price is not None:
@@ -26,7 +26,7 @@ class DataFetcher:
             todays_data = ticker.history(period='1d')
             if not todays_data.empty:
                 price = float(todays_data['Close'].iloc[-1])
-                # Stocker dans le cache
+                # on met en cache avant de retourner
                 global_cache.set(cache_key, price)
                 return price
             return None
@@ -36,7 +36,7 @@ class DataFetcher:
 
     def get_historical_volatility(self, ticker_symbol: str, period: str = "1y") -> Optional[float]:
         """Récupère la volatilité historique annualisée."""
-        # Vérifier le cache
+        # même logique de cache
         cache_key = f"vol_{ticker_symbol}_{period}"
         cached_vol = global_cache.get(cache_key)
         if cached_vol is not None:
@@ -48,13 +48,13 @@ class DataFetcher:
             if hist.empty:
                 return None
             
-            # Calcul de la volatilité annuelle
+            # volatilité annualisée par écart-type des rendements quotidiens
             returns = hist['Close'].pct_change().dropna()
             if len(returns) < 2: 
                 return None
             
             annual_volatility = returns.std() * np.sqrt(252)
-            # Stocker dans le cache
+            # on met en cache avant de retourner
             global_cache.set(cache_key, annual_volatility)
             return annual_volatility
         except Exception as e:
@@ -68,7 +68,7 @@ class DataFetcher:
         Returns:
             Optional[float]: Taux SOFR décimalisé (ex: 0.05 pour 5%) ou None
         """
-        # Vérifier le cache (SOFR change rarement en 1h)
+        # le SOFR varie peu en 1h, le cache est particulièrement adapté ici
         cache_key = "sofr_rate"
         cached_rate = global_cache.get(cache_key)
         if cached_rate is not None:
@@ -85,7 +85,7 @@ class DataFetcher:
                 latest_observation = observations[-1]
                 sofr_value = float(latest_observation['value'])
                 sofr_decimal = sofr_value / 100.0
-                # Stocker dans le cache
+                # on met en cache avant de retourner
                 global_cache.set(cache_key, sofr_decimal)
                 return sofr_decimal
             else:
@@ -111,7 +111,7 @@ class DataFetcher:
         Returns:
             float: Rendement de dividende annuel décimalisé (défaut: 0.0)
         """
-        # Vérifier le cache
+        # même logique de cache
         cache_key = f"dividend_{ticker_symbol}"
         cached_div = global_cache.get(cache_key)
         if cached_div is not None:
@@ -121,7 +121,7 @@ class DataFetcher:
             ticker = yf.Ticker(ticker_symbol)
             info = ticker.info
 
-            # 1) Preferer trailingAnnualDividendYield (déjà en décimal si présent)
+            # trailingAnnualDividendYield est déjà en décimal si présent, prioritaire sur les autres champs
             tr_yield = info.get("trailingAnnualDividendYield")
             if tr_yield is not None:
                 try:
@@ -132,7 +132,7 @@ class DataFetcher:
                 except Exception:
                     pass
 
-            # 2) Si absent, tenter de calculer via trailingAnnualDividendRate / prix
+            # fallback : on calcule le yield manuellement depuis le taux annuel et le cours
             tr_rate = info.get("trailingAnnualDividendRate") or info.get("dividendRate")
             price = info.get("previousClose") or info.get("regularMarketPrice") or self.get_live_price(ticker_symbol)
             if tr_rate is not None and price is not None:
@@ -146,16 +146,15 @@ class DataFetcher:
                 except Exception:
                     pass
 
-            # 3) Dernière chance : utiliser info['dividendYield'] mais corriger les formats aberrants
+            # dernier recours : dividendYield peut être mal formaté (pourcentage au lieu de décimal)
             dividend_yield = info.get("dividendYield")
             if dividend_yield is not None:
                 try:
                     div_decimal = float(dividend_yield)
-                    # Si la valeur semble être un pourcentage mal formaté (ex: 38 ou 0.38),
-                    # essayer de la normaliser en décimal (ex: 0.38 -> 0.0038)
+                    # certaines sources renvoient la valeur en %, on corrige
                     if div_decimal > 1.0:
                         div_decimal = div_decimal / 100.0
-                    # Cas particulier observé (0.38 signifiant 38%)
+                    # cas rare : 0.38 interprété comme 38%
                     if div_decimal > 0.2:
                         div_decimal = div_decimal / 100.0
                     global_cache.set(cache_key, div_decimal)
@@ -163,7 +162,7 @@ class DataFetcher:
                 except Exception:
                     pass
 
-            # Stocker 0.0 aussi dans le cache pour éviter des requêtes répétées
+            # on met en cache 0.0 pour ne pas refaire la requête inutilement
             global_cache.set(cache_key, 0.0)
             return 0.0
         except Exception as e:
@@ -180,7 +179,7 @@ class DataFetcher:
         Returns:
             Optional[str]: Nom de la société ou None en cas d'erreur
         """
-        # Vérifier le cache
+        # même logique de cache
         cache_key = f"company_name_{ticker_symbol}"
         cached_name = global_cache.get(cache_key)
         if cached_name is not None:
@@ -190,7 +189,7 @@ class DataFetcher:
             ticker = yf.Ticker(ticker_symbol)
             info = ticker.info
             company_name = info.get("longName") or info.get("shortName") or ticker_symbol
-            # Stocker dans le cache
+            # on met en cache avant de retourner
             global_cache.set(cache_key, company_name)
             return company_name
         except Exception as e:
@@ -220,11 +219,11 @@ class DataFetcher:
                 print("Aucune date d'expiration trouvée.")
                 return None, None
 
-            # Trouver la date d'expiration disponible la plus proche
+            # on cherche la date d'expiration disponible la plus proche de la date demandée
             closest_date = min(expirations, 
                                key=lambda x: abs(datetime.strptime(x, '%Y-%m-%d').date() - maturity_datetime.date()))
             
-            # Récupérer la chaîne d'options pour cette date
+            # récupération de la chaîne pour cette date
             opt_chain = ticker.option_chain(closest_date)
             
             return opt_chain, closest_date
@@ -259,7 +258,7 @@ class DataFetcher:
 
         option_type = option_type.lower()
         
-        # 1. Sélectionner les Calls ou les Puts
+        # sélection de la table calls ou puts selon le type demandé
         if option_type == 'call':
             data = opt_chain.calls
         elif option_type == 'put':
@@ -268,19 +267,19 @@ class DataFetcher:
             print(f"Type d'option non reconnu: {option_type}")
             return None, None, None
         
-        # 2. Trouver le strike le plus proche dans la liste
+        # on cherche le strike coté le plus proche du strike théorique demandé
         if data.empty:
             print("Aucune donnée d'option pour cette expiration.")
             return None, None, closest_date
             
-        # Assurer que 'strike' est une colonne numérique et calculer la différence absolue
+        # différence absolue pour identifier la ligne la plus proche
         data['abs_diff'] = abs(data['strike'] - strike)
         closest_row = data.sort_values('abs_diff').iloc[0]
         
         iv = closest_row['impliedVolatility']
         price = closest_row['lastPrice']
         
-        # Vérification de sécurité et s'assurer que l'IV et le prix sont valides
+        # une IV nulle ou négative n'est pas exploitable pour le pricing
         if iv is None or iv <= 0.001 or price is None or price <= 0:
             print(f"IV ({iv}) ou Prix ({price}) non valide ou nul pour K={strike} et type={option_type}.")
             return None, None, closest_date

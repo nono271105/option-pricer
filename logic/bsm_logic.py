@@ -35,7 +35,7 @@ class OptionModels:
                 return np.maximum(0, K - S)
             raise ValueError("option_type doit être 'call' ou 'put'")
 
-        # Empêcher les erreurs si sigma est trop petit ou négatif
+        # sécurisation contre les volatilités physiquement impossibles
         if sigma <= 1e-6:
             if option_type == 'call':
                 return np.maximum(0, S * np.exp(-q * T) - K * np.exp(-r * T))
@@ -89,19 +89,19 @@ class OptionModels:
         Nd1 = norm.cdf(d1)
         n_d1 = norm.pdf(d1)
 
-        # Delta
+        # sensibilité du prix à une variation du sous-jacent
         if option_type == 'call':
             delta = np.exp(-q * T) * Nd1
         else: # put
             delta = -np.exp(-q * T) * norm.cdf(-d1)
 
-        # Gamma
+        # convexité du prix par rapport au sous-jacent
         gamma = np.exp(-q * T) * n_d1 / (S * sigma * np.sqrt(T))
 
-        # Vega
+        # sensibilité du prix à une variation de la volatilité
         vega = S * np.exp(-q * T) * n_d1 * np.sqrt(T)
 
-        # Theta
+        # dépréciation temporelle de l'option
         theta_part1 = -(S * np.exp(-q * T) * n_d1 * sigma) / (2 * np.sqrt(T))
         
         if option_type == 'call':
@@ -114,7 +114,7 @@ class OptionModels:
         theta = theta_part1 + theta_part2 + theta_part3
         theta_daily = theta / 365.0
 
-        # Rho (sensibilité par point de base, divisé par 100)
+        # sensibilité aux taux d'intérêt, normalisée par point de base
         if option_type == 'call':
             rho = K * T * np.exp(-r * T) * norm.cdf(d2)
         else: # put
