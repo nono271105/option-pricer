@@ -443,3 +443,134 @@ class TestIntegration:
             f"Volatilité ({vol:.4f}) inférieure au taux sans risque ({sofr:.4f}) — "
             "valeurs suspectes."
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 4 : marketdata.app — IV historique
+# ══════════════════════════════════════════════════════════════════════════════
+
+MARKET_DATA_TOKEN = os.getenv("MARKET_DATA_TOKEN")
+
+
+class TestOCCSymbolBuilder:
+    """Tests pour la construction des symboles OCC standardises."""
+
+    def test_call_symbol(self):
+        """Format OCC pour un call AAPL K=300 exp 2026-06-18."""
+        symbol = DataFetcher.build_occ_symbol("AAPL", "2026-06-18", 300, "call")
+        assert symbol == "AAPL260618C00300000"
+
+    def test_put_symbol(self):
+        """Format OCC pour un put AAPL K=150 exp 2026-12-18."""
+        symbol = DataFetcher.build_occ_symbol("AAPL", "2026-12-18", 150, "put")
+        assert symbol == "AAPL261218P00150000"
+
+    def test_fractional_strike(self):
+        """Les strikes avec decimales doivent etre correctement convertis."""
+        symbol = DataFetcher.build_occ_symbol("SPY", "2026-06-18", 450.5, "call")
+        assert symbol == "SPY260618C00450500"
+
+    def test_ticker_uppercase(self):
+        """Le ticker doit etre force en majuscules."""
+        symbol = DataFetcher.build_occ_symbol("aapl", "2026-06-18", 300, "call")
+        assert symbol.startswith("AAPL")
+
+    def test_small_strike(self):
+        """Un strike petit (< 10) doit etre correctement padde."""
+        symbol = DataFetcher.build_occ_symbol("F", "2026-06-18", 5, "call")
+        assert symbol == "F260618C00005000"
+
+
+class TestMarketDataToken:
+    """Verifie que le token marketdata.app est configure."""
+
+    def test_market_data_token_present(self):
+        """MARKET_DATA_TOKEN doit etre defini et non vide dans .env."""
+        assert MARKET_DATA_TOKEN is not None, (
+            "MARKET_DATA_TOKEN manquant. Verifier le fichier .env."
+        )
+        assert len(MARKET_DATA_TOKEN.strip()) > 0, "MARKET_DATA_TOKEN est vide."
+
+    def test_market_data_token_loaded_in_datafetcher(self):
+        """DataFetcher doit charger le token depuis l'environnement."""
+        fetcher = DataFetcher()
+        assert fetcher.market_data_token is not None, (
+            "DataFetcher n'a pas charge MARKET_DATA_TOKEN."
+        )
+
+
+class TestMarketDataConnectivity:
+    """Tests de connectivite a l'API marketdata.app."""
+
+    def test_api_endpoint_reachable(self):
+        """L'endpoint marketdata.app doit repondre avec HTTP 200."""
+        headers = {"Authorization": f"Bearer {MARKET_DATA_TOKEN}"}
+        url = "https://api.marketdata.app/v1/options/expirations/AAPL/"
+        response = requests.get(url, headers=headers, timeout=10)
+        assert response.status_code == 200, (
+            f"marketdata.app a repondu avec le code {response.status_code}."
+        )
+
+    def test_api_returns_valid_json(self):
+        """La reponse doit etre du JSON valide avec le champ 's'."""
+        headers = {"Authorization": f"Bearer {MARKET_DATA_TOKEN}"}
+        url = "https://api.marketdata.app/v1/options/expirations/AAPL/"
+        response = requests.get(url, headers=headers, timeout=10)
+        data = response.json()
+        assert data.get("s") == "ok", f"Status inattendu : {data.get('s')}"
+
+
+class TestMarketDataOptionHistory:
+    """Tests de recuperation de l'historique des prix d'options."""
+
+    def test_get_option_history_returns_data(self):
+        """get_option_history_marketdata() doit retourner des donnees pour AAPL."""
+        fetcher = DataFetcher()
+        # on utilise une expiration existante et un strike ATM
+        headers = {"Authorization": f"Bearer {MARKET_DATA_TOKEN}"}
+        exp_resp = requests.get(
+            "https://api.marketdata.app/v1/options/expirations/AAPL/",
+            headers=headers, timeout=10,
+        )
+        expirations = exp_resp.json().get("expirations", [])
+        # selection de la premiere expiration a plus de 20 jours
+        from datetime import datetime as dt
+        today = dt.now()
+        target_exp = None
+        for exp in expirations:
+            exp_date = dt.strptime(exp, "%Y-%m-%d")
+            if (exp_date - today).days > 20:
+                target_exp = exp
+                break
+
+        if target_exp is None:
+            pytest.skip("Aucune expiration a plus de 20 jours disponible.")
+
+        result = fetcher.get_option_history_marketdata(
+            ticker="AAPL",
+            expiration_date=target_exp,
+            strike=300,
+            option_type="call",
+            history_days=30,
+        )
+        # le contrat peut ne pas avoir d'historique suffisant,
+        # mais si des donnees existent elles doivent etre valides
+        if result is not None:
+            assert len(result["mid"]) > 0, "La liste des prix mid est vide."
+            assert len(result["mid"]) == len(result["underlyingPrice"])
+            assert len(result["mid"]) == len(result["dte"])
+            assert all(p > 0 for p in result["mid"]), "Prix mid negatif detecte."
+            assert all(p > 0 for p in result["underlyingPrice"]), "Spot negatif detecte."
+
+    def test_get_option_history_invalid_symbol_returns_none(self):
+        """Un symbole inexistant doit retourner None."""
+        fetcher = DataFetcher()
+        result = fetcher.get_option_history_marketdata(
+            ticker="XXXXINVALID",
+            expiration_date="2026-06-18",
+            strike=100,
+            option_type="call",
+            history_days=10,
+        )
+        assert result is None
+

@@ -12,6 +12,123 @@ load_dotenv()
 class DataFetcher:
     def __init__(self) -> None:
         self.fred_api_key: Optional[str] = os.getenv("FRED_API_KEY")
+        self.market_data_token: Optional[str] = os.getenv("MARKET_DATA_TOKEN")
+
+    @staticmethod
+    def build_occ_symbol(ticker: str, expiration_date: str, strike: float, option_type: str) -> str:
+        """
+        Construit un symbole OCC standard à partir des paramètres du contrat.
+
+        Format OCC : {TICKER}{YYMMDD}{C|P}{STRIKE*1000:08d}
+        Exemple : AAPL, 2026-06-18, 300, call -> AAPL260618C00300000
+
+        Args:
+            ticker: Symbole du sous-jacent (ex: AAPL)
+            expiration_date: Date d'expiration au format YYYY-MM-DD
+            strike: Prix d'exercice
+            option_type: 'call' ou 'put'
+
+        Returns:
+            str: Symbole OCC formaté
+        """
+        from datetime import datetime as dt
+        exp = dt.strptime(expiration_date, "%Y-%m-%d")
+        date_part = exp.strftime("%y%m%d")
+        side = "C" if option_type.lower() == "call" else "P"
+        strike_int = int(strike * 1000)
+        return f"{ticker.upper()}{date_part}{side}{strike_int:08d}"
+
+    def get_option_history_marketdata(
+        self,
+        ticker: str,
+        expiration_date: str,
+        strike: float,
+        option_type: str,
+        history_days: int = 30,
+    ) -> Optional[dict]:
+        """
+        Recupere l'historique des prix d'un contrat d'option via marketdata.app.
+
+        Utilise le endpoint quotes avec from/to pour obtenir les prix mid,
+        le spot et le DTE de chaque jour de trading sur la periode demandee.
+
+        Args:
+            ticker: Symbole du sous-jacent
+            expiration_date: Date d'expiration au format YYYY-MM-DD
+            strike: Prix d'exercice
+            option_type: 'call' ou 'put'
+            history_days: Nombre de jours calendaires d'historique
+
+        Returns:
+            Optional[dict]: Dictionnaire avec les cles mid, underlyingPrice, dte,
+                            strike, expiration, updated. None en cas d'erreur.
+        """
+        if not self.market_data_token:
+            print("MARKET_DATA_TOKEN non configure dans le fichier .env.")
+            return None
+
+        occ_symbol = self.build_occ_symbol(ticker, expiration_date, strike, option_type)
+
+        cache_key = f"mktdata_hist_{occ_symbol}_{history_days}"
+        cached = global_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from datetime import timedelta
+        today = datetime.now()
+        date_from = (today - timedelta(days=history_days)).strftime("%Y-%m-%d")
+        date_to = today.strftime("%Y-%m-%d")
+
+        url = f"https://api.marketdata.app/v1/options/quotes/{occ_symbol}/"
+        headers = {"Authorization": f"Bearer {self.market_data_token}"}
+        params = {"from": date_from, "to": date_to}
+
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("s") != "ok":
+                print(f"marketdata.app : pas de donnees pour {occ_symbol} ({data.get('s')})")
+                return None
+
+            # filtrage des points avec prix mid valide (non null, positif)
+            mid_list = data.get("mid", [])
+            underlying_list = data.get("underlyingPrice", [])
+            dte_list = data.get("dte", [])
+            updated_list = data.get("updated", [])
+
+            valid_indices = [
+                i for i in range(len(mid_list))
+                if mid_list[i] is not None
+                and mid_list[i] > 0
+                and underlying_list[i] is not None
+            ]
+
+            if not valid_indices:
+                print(f"Aucun prix mid valide pour {occ_symbol}.")
+                return None
+
+            result = {
+                "mid": [mid_list[i] for i in valid_indices],
+                "underlyingPrice": [underlying_list[i] for i in valid_indices],
+                "dte": [dte_list[i] for i in valid_indices],
+                "updated": [updated_list[i] for i in valid_indices],
+                "strike": strike,
+                "expiration": expiration_date,
+                "option_type": option_type,
+                "occ_symbol": occ_symbol,
+            }
+
+            global_cache.set(cache_key, result)
+            return result
+
+        except requests.exceptions.RequestException as e:
+            print(f"Erreur HTTP marketdata.app pour {occ_symbol} : {e}")
+            return None
+        except Exception as e:
+            print(f"Erreur inattendue marketdata.app pour {occ_symbol} : {e}")
+            return None
 
     def get_live_price(self, ticker_symbol: str) -> Optional[float]:
         """Récupère le prix en direct du dernier jour de trading."""

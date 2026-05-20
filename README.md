@@ -40,6 +40,7 @@
 - **Prix spot** via Yahoo Finance (`yfinance`)
 - **Taux sans risque SOFR** depuis l'API FRED
 - **Dividendes** et **volatilité implicite** extraits automatiquement depuis les chaînes d'options
+- **Historique prix options** via l'API marketdata.app (utilisé pour le forecast IV)
 - Cache TTL thread-safe pour limiter les appels API
 
 ### Grecs
@@ -119,12 +120,12 @@ Construction et analyse de stratégies options multi-legs avec données de march
 
 ---
 
-### 8 · Forecast TimesFM (IA)
+### 8 · Forecast IV TimesFM (IA)
 
-Prévision des prix sous-jacents via le modèle de fondation **Google TimesFM (2.5-200M)**.
-Repricing BSM au jour le jour sur l'horizon de forecast (jusqu'à 63 jours) et projection de l'évolution du prix de l'option et du Delta (Delta Forecast). Exécution asynchrone (QThread) 100% compatible CPU avec historique raccordé en temps réel.
+Prévision de la **volatilité implicite (IV)** via le modèle de fondation **Google TimesFM (2.5-200M)**.
+Historique d'IV recalculé par inversion BSM (Brent) à partir des prix d'options fournis par l'API **marketdata.app**.
+Repricing BSM et recalcul du delta jour par jour sur l'horizon de forecast (jusqu'à 63 jours) en injectant l'IV prédite, toutes choses étant égales par ailleurs . Exécution asynchrone (QThread) 100% compatible CPU. 3 graphiques : IV historique + forecast, prix option, delta.
 
-<img width="1440" height="900" alt="Forecast" src="https://github.com/user-attachments/assets/9802dd73-17d2-4973-9360-f03a3dc6f5b3" />
 
 ---
 
@@ -156,8 +157,9 @@ venv\Scripts\activate           # Windows
 # 3. Dépendances
 pip install -r requirements.txt
 
-# 4. Variables d'environnement
-FRED_API_KEY=VOTRE-CLÉ        # Créer un fichier .env et insérer votre clé API
+# 4. Variables d'environnement (créer un fichier .env à la racine)
+FRED_API_KEY=VOTRE-CLÉ                  # API FRED pour le taux SOFR
+MARKET_DATA_TOKEN=VOTRE-TOKEN           # API marketdata.app pour l'IV historique
 
 # 5. Lancement
 python main.py
@@ -168,6 +170,8 @@ python main.py
 ## Structure du projet
 
 ```
+
+
 option_pricer/
 ├── main.py                           # Point d'entrée
 ├── gui_app.py                        # Interface PySide6
@@ -188,7 +192,7 @@ option_pricer/
 │   └── volatility_surface_ui.py      # Onglet Surface IV 3D
 │
 ├── logic/                            # Modules de logique métier
-│   ├── __init__.py                
+│   ├── __init__.py  
 │   ├── bsm_logic.py                  # Modèle Black-Scholes + Grecs
 │   ├── crr_logic.py                  # Modèle Cox-Ross-Rubinstein + Grecs
 │   ├── exotic_options_logic.py       # Barrières, Asiatiques, Lookback, Digitales
@@ -201,6 +205,7 @@ option_pricer/
 ├── tests/                            # Tests de régression
 │   ├── conftest.py                   # Fixtures pytest
 │   ├── test_app.py                   # Tests interface
+│   ├── test_data.py                  # Tests données
 │   └── test_pricing.py               # Régression BSM, CRR, Grecs, exotiques
 │
 ├── requirements.txt
@@ -213,6 +218,7 @@ option_pricer/
 Chaque onglet s'abonne automatiquement aux mises à jour du store centralisé. Les données (S, r, q, σ, ticker) sont synchronisées une seule fois à la source et propagées en temps réel aux 8 onglets.
 
 **2. Séparation UI / Logique**
+
 - `UI/*.py` : interaction PySide6, validation des inputs, affichage graphique
 - `logic/*.py` : calculs purs (BSM, CRR, grecs, stratégies), aucune dépendance Qt
 - Facilite les tests unitaires et la réutilisabilité du code métier
@@ -226,6 +232,7 @@ Calculs lourds (CRR, Monte Carlo, TimesFM, surface IV) exécutés en arrière-pl
 | --------------------------- | ----------------------------------------- |
 | `PySide6`                 | Interface graphique (Qt6)                 |
 | `yfinance`                | Prix, IV, chaînes d'options              |
+| `marketdata.app` (API)    | Historique prix options (IV forecast)     |
 | `matplotlib`              | Graphiques 2D                             |
 | `plotly`                  | Surface IV 3D interactive                 |
 | `scipy`                   | CDF normale, interpolation, optimisation  |
@@ -244,4 +251,4 @@ MIT voir [`LICENSE`](LICENSE).
 
 ---
 
-*Dernière mise à jour : mai 2026 : migration PySide6, architecture découplée UI/logique, tests de régression (v2.3)*
+*Dernière mise à jour : mai 2026 : forecast IV TimesFM via marketdata.app, repricing BSM à IV prédite (v2.4)*

@@ -429,60 +429,146 @@ class TestSimulationLogic:
 
 
 # ============================================================================
-#  FORECAST_LOGIC  (process_forecast_results uniquement)
+#  FORECAST_LOGIC  (inversion IV et repricing a IV predite)
 # ============================================================================
 
 class TestForecastLogic:
-    """Tests pour forecast_logic.py (traitement des résultats, pas l'inférence)."""
+    """Tests pour forecast_logic.py (inversion IV, repricing, pas l'inference TimesFM)."""
 
     def setup_method(self):
         self.om = OptionModels()
         self.fl = ForecastLogic(self.om)
 
-    def test_process_forecast_results_shapes(self):
-        horizon = 10
-        history = np.linspace(95, 105, 60).astype(np.float32)
-        point_forecast = np.array([np.linspace(105, 110, horizon)])
+    def test_compute_iv_roundtrip_call(self):
+        """BSM(sigma) donne un prix, l'inversion doit retrouver sigma."""
+        sigma_true = 0.25
+        S, K, T_days, r, q = 100, 100, 30, 0.05, 0.01
+        T = T_days / 365.0
+        price = self.om.black_scholes_price(S, K, T, r, sigma_true, q, "call")
 
-        pf, opt_prices, deltas, hist_slice, hist_opt, hist_d, x_hist = \
-            self.fl.process_forecast_results(
-                point_forecast, history, horizon,
-                K=100, T_total=0.25, r=0.05, sigma=0.2, q=0.0,
+        iv_series = self.fl.compute_iv_from_prices(
+            mid_prices=[price],
+            underlying_prices=[S],
+            dtes=[T_days],
+            strike=K, r=r, q=q, option_type="call",
+        )
+        assert len(iv_series) == 1
+        assert iv_series[0] == pytest.approx(sigma_true, abs=1e-3)
+
+    def test_compute_iv_roundtrip_put(self):
+        """Meme test pour un put."""
+        sigma_true = 0.30
+        S, K, T_days, r, q = 100, 105, 60, 0.05, 0.0
+        T = T_days / 365.0
+        price = self.om.black_scholes_price(S, K, T, r, sigma_true, q, "put")
+
+        iv_series = self.fl.compute_iv_from_prices(
+            mid_prices=[price],
+            underlying_prices=[S],
+            dtes=[T_days],
+            strike=K, r=r, q=q, option_type="put",
+        )
+        assert iv_series[0] == pytest.approx(sigma_true, abs=1e-3)
+
+    def test_compute_iv_multiple_points(self):
+        """Inversion sur une serie de 10 points avec des IV variables."""
+        S_vals = [100, 101, 99, 102, 98, 103, 97, 104, 100, 101]
+        sigma_vals = [0.20, 0.22, 0.21, 0.23, 0.19, 0.24, 0.18, 0.25, 0.20, 0.22]
+        K, r, q = 100, 0.05, 0.0
+        dte_vals = [30, 29, 28, 27, 26, 25, 24, 23, 22, 21]
+
+        prices = []
+        for i in range(10):
+            T = dte_vals[i] / 365.0
+            p = self.om.black_scholes_price(S_vals[i], K, T, r, sigma_vals[i], q, "call")
+            prices.append(p)
+
+        iv_series = self.fl.compute_iv_from_prices(
+            mid_prices=prices,
+            underlying_prices=S_vals,
+            dtes=dte_vals,
+            strike=K, r=r, q=q, option_type="call",
+        )
+        assert len(iv_series) == 10
+        for i in range(10):
+            assert iv_series[i] == pytest.approx(sigma_vals[i], abs=1e-3)
+
+    def test_compute_iv_handles_invalid_prices(self):
+        """Les prix invalides (negatifs, nuls) sont interpoles."""
+        K, r, q = 100, 0.05, 0.0
+        valid_price = self.om.black_scholes_price(100, K, 30/365, r, 0.25, q, "call")
+
+        iv_series = self.fl.compute_iv_from_prices(
+            mid_prices=[valid_price, -1.0, 0.0, valid_price],
+            underlying_prices=[100, 100, 100, 100],
+            dtes=[30, 29, 28, 27],
+            strike=K, r=r, q=q, option_type="call",
+        )
+        assert len(iv_series) == 4
+        # les NaN doivent avoir ete interpoles
+        assert not np.any(np.isnan(iv_series))
+
+    def test_process_iv_forecast_results_shapes(self):
+        """Verifie les dimensions des series retournees."""
+        horizon = 10
+        iv_history = np.full(20, 0.25)
+        iv_point_forecast = np.array([np.full(horizon, 0.24)])
+
+        iv_fc, opt_prices, deltas, iv_hist, hist_opt, hist_d, x_hist = \
+            self.fl.process_iv_forecast_results(
+                iv_point_forecast, iv_history, horizon,
+                K=100, T_total=0.25, S=100, r=0.05, q=0.0,
                 option_type="call",
             )
 
-        assert len(pf) == horizon
+        assert len(iv_fc) == horizon
         assert len(opt_prices) == horizon
         assert len(deltas) == horizon
-        assert len(hist_slice) == 30   # min(30, 60)
-        assert len(hist_opt) == 30
-        assert len(hist_d) == 30
+        assert len(iv_hist) == 20   # min(30, 20) = 20
+        assert len(hist_opt) == 20
+        assert len(hist_d) == 20
 
-    def test_forecast_option_prices_positive(self):
+    def test_process_iv_forecast_option_prices_positive(self):
+        """Les prix d'options reprices doivent etre strictement positifs."""
         horizon = 5
-        history = np.full(60, 100.0, dtype=np.float32)
-        point_forecast = np.array([np.full(horizon, 100.0)])
+        iv_history = np.full(30, 0.25)
+        iv_point_forecast = np.array([np.full(horizon, 0.25)])
 
-        _, opt_prices, _, _, _, _, _ = self.fl.process_forecast_results(
-            point_forecast, history, horizon,
-            K=100, T_total=0.5, r=0.05, sigma=0.2, q=0.0,
+        _, opt_prices, _, _, _, _, _ = self.fl.process_iv_forecast_results(
+            iv_point_forecast, iv_history, horizon,
+            K=100, T_total=0.5, S=100, r=0.05, q=0.0,
             option_type="call",
         )
         assert np.all(opt_prices > 0)
 
-    def test_forecast_delta_range(self):
-        """Les deltas d'un call doivent être dans [0, 1]."""
+    def test_process_iv_forecast_delta_range(self):
+        """Les deltas d'un call doivent etre dans [0, 1]."""
         horizon = 10
-        history = np.full(60, 100.0, dtype=np.float32)
-        point_forecast = np.array([np.linspace(90, 110, horizon)])
+        iv_history = np.full(30, 0.25)
+        iv_point_forecast = np.array([np.linspace(0.15, 0.35, horizon)])
 
-        _, _, deltas, _, _, _, _ = self.fl.process_forecast_results(
-            point_forecast, history, horizon,
-            K=100, T_total=0.5, r=0.05, sigma=0.2, q=0.0,
+        _, _, deltas, _, _, _, _ = self.fl.process_iv_forecast_results(
+            iv_point_forecast, iv_history, horizon,
+            K=100, T_total=0.5, S=100, r=0.05, q=0.0,
             option_type="call",
         )
         assert np.all(deltas >= 0)
         assert np.all(deltas <= 1)
+
+    def test_process_iv_forecast_negative_iv_clamped(self):
+        """Les IV negatives predites doivent etre bornees a 0.01 minimum."""
+        horizon = 3
+        iv_history = np.full(10, 0.20)
+        # IV negatives simulant un artefact du modele
+        iv_point_forecast = np.array([[-0.05, 0.0, 0.10]])
+
+        iv_fc, opt_prices, _, _, _, _, _ = self.fl.process_iv_forecast_results(
+            iv_point_forecast, iv_history, horizon,
+            K=100, T_total=0.5, S=100, r=0.05, q=0.0,
+            option_type="call",
+        )
+        # les prix doivent quand meme etre positifs grace au clamping
+        assert np.all(opt_prices > 0)
 
 
 # ============================================================================
