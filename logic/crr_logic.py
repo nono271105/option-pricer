@@ -170,7 +170,7 @@ class CRRModels:
         # choc infinitésimal sur le taux sans risque
         eps_r = 0.0001
         rho_val = (crr_price(sigma, r + eps_r) - crr_price(sigma, r - eps_r)) / (2 * eps_r)
-        rho_val = rho_val / 100.0
+        rho_val = rho_val / 100.0 # sensibilté à une variation de 1% du taux d'intérêt
 
         return {
             'delta': delta,

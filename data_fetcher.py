@@ -228,63 +228,49 @@ class DataFetcher:
         Returns:
             float: Rendement de dividende annuel décimalisé (défaut: 0.0)
         """
-        # même logique de cache
         cache_key = f"dividend_{ticker_symbol}"
         cached_div = global_cache.get(cache_key)
         if cached_div is not None:
             return cached_div
-        
-        try:
-            ticker = yf.Ticker(ticker_symbol)
-            info = ticker.info
 
-            # trailingAnnualDividendYield est déjà en décimal si présent, prioritaire sur les autres champs
+        result = 0.0
+        try:
+            info = yf.Ticker(ticker_symbol).info
+
+            # 1. trailingAnnualDividendYield est renvoyé en décimal par yfinance (ex: 0.0034)
             tr_yield = info.get("trailingAnnualDividendYield")
             if tr_yield is not None:
-                try:
-                    val = float(tr_yield)
-                    if 0 <= val < 1.0:
-                        global_cache.set(cache_key, val)
-                        return val
-                except Exception:
-                    pass
-
-            # fallback : on calcule le yield manuellement depuis le taux annuel et le cours
-            tr_rate = info.get("trailingAnnualDividendRate") or info.get("dividendRate")
-            price = info.get("previousClose") or info.get("regularMarketPrice") or self.get_live_price(ticker_symbol)
-            if tr_rate is not None and price is not None:
-                try:
+                result = float(tr_yield)
+            else:
+                # 2. fallback : calcul manuel (dividende / cours)
+                rate = info.get("trailingAnnualDividendRate") or info.get("dividendRate")
+                price = info.get("previousClose") or info.get("regularMarketPrice") or self.get_live_price(ticker_symbol)
+                
+                if rate is not None and price is not None:
                     price_f = float(price)
                     if price_f > 0:
-                        yield_calc = float(tr_rate) / price_f
-                        if 0 <= yield_calc < 1.0:
-                            global_cache.set(cache_key, yield_calc)
-                            return yield_calc
-                except Exception:
-                    pass
+                        result = float(rate) / price_f
+                else:
+                    # 3. dernier recours : dividendYield est renvoyé en pourcentage par yfinance (ex: 0.35 pour 0.35%)
+                    div_yield = info.get("dividendYield")
+                    if div_yield is not None:
+                        result = float(div_yield) / 100.0
 
-            # dernier recours : dividendYield peut être mal formaté (pourcentage au lieu de décimal)
-            dividend_yield = info.get("dividendYield")
-            if dividend_yield is not None:
-                try:
-                    div_decimal = float(dividend_yield)
-                    # certaines sources renvoient la valeur en %, on corrige
-                    if div_decimal > 1.0:
-                        div_decimal = div_decimal / 100.0
-                    # cas rare : 0.38 interprété comme 38%
-                    if div_decimal > 0.2:
-                        div_decimal = div_decimal / 100.0
-                    global_cache.set(cache_key, div_decimal)
-                    return div_decimal
-                except Exception:
-                    pass
+            # Validation du résultat pour éviter des valeurs absurdes
+            if not (0.0 <= result < 1.0):
+                result = 0.0
 
-            # on met en cache 0.0 pour ne pas refaire la requête inutilement
-            global_cache.set(cache_key, 0.0)
-            return 0.0
+        except (TypeError, ValueError) as e:
+            # Erreur lors de la conversion des valeurs en float
+            print(f"Données de dividende mal formatées pour {ticker_symbol}: {e}")
+            result = 0.0
         except Exception as e:
+            # Erreur réseau, ticker introuvable, etc.
             print(f"Erreur lors de la récupération du rendement de dividende pour {ticker_symbol}: {e}")
-            return 0.0
+            result = 0.0
+
+        global_cache.set(cache_key, result)
+        return result
 
     def get_company_name(self, ticker_symbol: str) -> Optional[str]:
         """

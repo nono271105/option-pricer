@@ -119,7 +119,7 @@ class OptionModels:
             rho = K * T * np.exp(-r * T) * norm.cdf(d2)
         else: # put
             rho = -K * T * np.exp(-r * T) * norm.cdf(-d2)
-        rho = rho / 100.0  # Exprimer par point de base (0.01%)
+        rho = rho / 100.0  # sensibilté à une variation de 1% du taux d'intérêt
         
         return {
             'delta': delta,
