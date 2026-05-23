@@ -306,15 +306,9 @@ class BSMTab(QWidget):
 
             breakeven = 0.0
             if option_type == "call":
-                if position == "long":
-                    breakeven = K + premium
-                elif position == "short":
-                    breakeven = K - premium
+                breakeven = K + premium
             elif option_type == "put":
-                if position == "long":
-                    breakeven = K - premium
-                elif position == "short":
-                    breakeven = K + premium
+                breakeven = K - premium
 
             self.fig.clear()
             ax = self.fig.add_subplot(111)

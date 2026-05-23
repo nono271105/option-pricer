@@ -52,20 +52,20 @@ class PricingWorker(QThread):
                 mc  = price_barrier_mc(
                     p["S"], p["K"], p["T"], p["r"], p["sigma"], p["q"],
                     p["barrier"], otype, p["barrier_type"],
-                    n_sims=p["n_sims"], n_steps=p["n_steps"])
+                    n_sims=p["n_sims"], n_steps=p["n_steps"], seed=p["seed"])
 
             elif opt == "asian":
                 ana = None   # Pas de formule analytique pour l'asiatique
                 mc  = price_asian_mc(
                     p["S"], p["K"], p["T"], p["r"], p["sigma"], p["q"],
                     otype, p["averaging"],
-                    n_sims=p["n_sims"], n_steps=p["n_steps"])
+                    n_sims=p["n_sims"], n_steps=p["n_steps"], seed=p["seed"])
 
             elif opt == "lookback":
                 ana = None   # Pas de formule analytique pour le lookback
                 mc  = price_lookback_mc(
                     p["S"], p["T"], p["r"], p["sigma"], p["q"], otype,
-                    n_sims=p["n_sims"], n_steps=p["n_steps"])
+                    n_sims=p["n_sims"], n_steps=p["n_steps"], seed=p["seed"])
 
             else:   # digital
                 ana = price_digital_analytical(
@@ -74,7 +74,7 @@ class PricingWorker(QThread):
                 mc  = price_digital_mc(
                     p["S"], p["K"], p["T"], p["r"], p["sigma"], p["q"],
                     otype, p["payoff_amount"],
-                    n_sims=p["n_sims"], n_steps=p["n_steps"])
+                    n_sims=p["n_sims"], n_steps=p["n_steps"], seed=p["seed"])
 
             self.result_ready.emit(ana, mc)
 
@@ -343,6 +343,18 @@ class ExoticOptionsTab(QWidget):
         self.nsteps_input.setValidator(QIntValidator(10, 500))
         mc_form.addRow("Pas de temps:", self.nsteps_input)
 
+        from PySide6.QtWidgets import QCheckBox
+        self.seed_checkbox = QCheckBox("Utiliser un seed fixe")
+        self.seed_input = QLineEdit("42")
+        self.seed_input.setValidator(QIntValidator(0, 999999999))
+        self.seed_input.setEnabled(False)
+        self.seed_checkbox.toggled.connect(self.seed_input.setEnabled)
+        
+        seed_layout = QHBoxLayout()
+        seed_layout.addWidget(self.seed_checkbox)
+        seed_layout.addWidget(self.seed_input)
+        mc_form.addRow("Reproductibilité:", seed_layout)
+
         mc_group.setLayout(mc_form)
         left_layout.addWidget(mc_group)
 
@@ -543,6 +555,13 @@ class ExoticOptionsTab(QWidget):
             QMessageBox.warning(self, "Erreur", "Paramètres Monte Carlo invalides.")
             return None
 
+        seed = None
+        if self.seed_checkbox.isChecked():
+            try:
+                seed = int(self.seed_input.text())
+            except ValueError:
+                seed = 42
+
         idx_map = {0: "barrier", 1: "asian", 2: "lookback", 3: "digital"}
         exotic  = idx_map[self.exotic_combo.currentIndex()]
 
@@ -576,6 +595,7 @@ class ExoticOptionsTab(QWidget):
             "payoff_amount": payoff_amount,
             "n_sims"       : n_sims,
             "n_steps"      : n_steps,
+            "seed"         : seed,
         }
 
     # exécution asynchrone des modèles mathématiques
@@ -611,8 +631,13 @@ class ExoticOptionsTab(QWidget):
 
         # restitution de l'estimation stochastique
         self.price_mc_label.setText(f"${mc.price:.4f}")
-        self.stderr_mc_label.setText(
-            f"±{mc.std_error:.4f}" if mc.std_error is not None else "N/A")
+        if mc.std_error is not None:
+            ci_text = ""
+            if mc.ci_95:
+                ci_text = f" (IC 95%: [{mc.ci_95[0]:.4f}, {mc.ci_95[1]:.4f}])"
+            self.stderr_mc_label.setText(f"±{mc.std_error:.4f}{ci_text}")
+        else:
+            self.stderr_mc_label.setText("N/A")
 
         # mesure de l'erreur d'approximation du modèle MC
         if ana is not None:

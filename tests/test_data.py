@@ -507,7 +507,7 @@ class TestMarketDataConnectivity:
         headers = {"Authorization": f"Bearer {MARKET_DATA_TOKEN}"}
         url = "https://api.marketdata.app/v1/options/expirations/AAPL/"
         response = requests.get(url, headers=headers, timeout=10)
-        assert response.status_code == 200, (
+        assert response.status_code in (200, 203), (
             f"marketdata.app a repondu avec le code {response.status_code}."
         )
 

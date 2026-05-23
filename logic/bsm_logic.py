@@ -36,24 +36,27 @@ class OptionModels:
             raise ValueError("option_type doit être 'call' ou 'put'")
 
         # sécurisation contre les volatilités physiquement impossibles
-        if sigma <= 1e-6:
-            if option_type == 'call':
-                return np.maximum(0, S * np.exp(-q * T) - K * np.exp(-r * T))
-            elif option_type == 'put':
-                return np.maximum(0, K * np.exp(-r * T) - S * np.exp(-q * T))
-            raise ValueError("option_type doit être 'call' ou 'put'")
+        sigma_arr = np.asarray(sigma)
+        sigma_safe = np.maximum(sigma_arr, 1e-6)
 
-        d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
+        d1 = (np.log(S / K) + (r - q + 0.5 * sigma_safe**2) * T) / (sigma_safe * np.sqrt(T))
+        d2 = d1 - sigma_safe * np.sqrt(T)
 
         if option_type == 'call':
             price = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+            if np.any(sigma_arr <= 1e-6):
+                intrinsic = np.maximum(0, S * np.exp(-q * T) - K * np.exp(-r * T))
+                price = np.where(sigma_arr <= 1e-6, intrinsic, price)
         elif option_type == 'put':
             price = K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+            if np.any(sigma_arr <= 1e-6):
+                intrinsic = np.maximum(0, K * np.exp(-r * T) - S * np.exp(-q * T))
+                price = np.where(sigma_arr <= 1e-6, intrinsic, price)
         else:
             raise ValueError("option_type doit être 'call' ou 'put'")
 
-        return price
+        # si on attend un scalaire en sortie, on convertit
+        return float(price) if getattr(price, 'ndim', 1) == 0 else price
 
     def calculate_greeks(
         self, 
@@ -80,8 +83,26 @@ class OptionModels:
         Returns:
             Dict[str, float]: Dictionnaire avec clés 'delta', 'gamma', 'theta', 'vega', 'rho'
         """
-        if T <= 0 or sigma <= 1e-6:
-            return {'delta': 0, 'gamma': 0, 'theta': 0, 'vega': 0, 'rho': 0}
+        if T < 0:
+            raise ValueError("T ne peut pas être négatif (option déjà expirée).")
+
+        if T <= 1e-10 or sigma <= 1e-6:
+            # À expiration ou volatilité nulle : Greeks déterministes
+            if option_type == 'call':
+                if S > K:       # ITM
+                    delta = 1.0
+                elif S < K:     # OTM
+                    delta = 0.0
+                else:           # ATM — convention ±0.5
+                    delta = 0.5
+            else:  # put
+                if S < K:       # ITM
+                    delta = -1.0
+                elif S > K:     # OTM
+                    delta = 0.0
+                else:           # ATM — convention ±0.5
+                    delta = -0.5
+            return {'delta': delta, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0, 'rho': 0.0}
             
         d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
         d2 = d1 - sigma * np.sqrt(T)

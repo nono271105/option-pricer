@@ -32,17 +32,29 @@ class FetchDataWorker(QThread):
         try:
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=5) as executor:
-                price_future = executor.submit(self.data_fetcher.get_live_price, self.ticker_symbol)
-                sofr_future = executor.submit(self.data_fetcher.get_sofr_rate)
-                dividend_future = executor.submit(self.data_fetcher.get_dividend_yield, self.ticker_symbol)
-                volatility_future = executor.submit(self.data_fetcher.get_historical_volatility, self.ticker_symbol, "1y")
-                company_name_future = executor.submit(self.data_fetcher.get_company_name, self.ticker_symbol)
-                live_price = price_future.result(timeout=10)
-                sofr = sofr_future.result(timeout=10)
-                dividend = dividend_future.result(timeout=10)
-                volatility = volatility_future.result(timeout=10)
-                company_name = company_name_future.result(timeout=10)
-            self.data_ready.emit(self.ticker_symbol, live_price, sofr, dividend, volatility, company_name or self.ticker_symbol)
+                futures = {
+                    "price": executor.submit(self.data_fetcher.get_live_price, self.ticker_symbol),
+                    "sofr": executor.submit(self.data_fetcher.get_sofr_rate),
+                    "dividend": executor.submit(self.data_fetcher.get_dividend_yield, self.ticker_symbol),
+                    "volatility": executor.submit(self.data_fetcher.get_historical_volatility, self.ticker_symbol, "1y"),
+                    "company": executor.submit(self.data_fetcher.get_company_name, self.ticker_symbol),
+                }
+                
+                results = {}
+                for key, future in futures.items():
+                    try:
+                        results[key] = future.result(timeout=10)
+                    except Exception:
+                        results[key] = None
+
+            self.data_ready.emit(
+                self.ticker_symbol, 
+                results["price"], 
+                results["sofr"], 
+                results["dividend"], 
+                results["volatility"], 
+                results["company"] or self.ticker_symbol
+            )
         except Exception as e:
             self.error.emit(str(e))
 
@@ -100,6 +112,9 @@ class OptionPricingApp(QWidget):
             return
 
         # On empêche les clics multiples pendant le traitement
+        if self._fetch_worker is not None and self._fetch_worker.isRunning():
+            return
+
         if hasattr(source_tab, 'fetch_data_button'):
             source_tab.fetch_data_button.setEnabled(False)
             source_tab.fetch_data_button.setText("⏳ Chargement...")

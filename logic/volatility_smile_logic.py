@@ -19,7 +19,7 @@ class VolatilitySmileLogic:
         if market_price <= 0 or T <= 0 or S <= 0 or K <= 0:
             return None
             
-        intrinsic = max(0, S - K) if option_type == 'call' else max(0, K - S)
+        intrinsic = max(0, S * np.exp(-q*T) - K * np.exp(-r*T)) if option_type == 'call' else max(0, K * np.exp(-r*T) - S * np.exp(-q*T))
         
         if market_price < intrinsic:
             return None
@@ -84,9 +84,10 @@ class VolatilitySmileLogic:
 
         strikes_interp = np.linspace(strikes.min(), strikes.max(), 200)
         if len(strikes) >= 4:
-            f_interp = interp1d(strikes, ivs, kind='cubic', fill_value='extrapolate')
+            f_interp = interp1d(strikes, ivs, kind='cubic', fill_value=(ivs[0], ivs[-1]), bounds_error=False)
         else:
-            f_interp = interp1d(strikes, ivs, kind='linear', fill_value='extrapolate')
+            f_interp = interp1d(strikes, ivs, kind='linear', fill_value=(ivs[0], ivs[-1]), bounds_error=False)
         ivs_interp = f_interp(strikes_interp)
+        ivs_interp = np.clip(ivs_interp, 1.0, 300.0)
 
         return strikes_interp, ivs_interp, smile_df

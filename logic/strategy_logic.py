@@ -157,7 +157,7 @@ class StrategyManager:
 
         legs = []
         for leg_def in definition:
-            strike = math.ceil(S * (1 + leg_def["offset"]))
+            strike = round(S * (1 + leg_def["offset"]))
 
             # valorisation hybride de la jambe : extraction de la cotation réelle ou pricing théorique si illiquide
             premium = self._get_premium(
@@ -313,7 +313,6 @@ class StrategyManager:
             sign = 1 if leg["position"] == "long" else -1
             for key in total:
                 total[key] += sign * g.get(key, 0.0)
-        total["vega"] = total["vega"] / 100.0
         return {k: round(v, 6) for k, v in total.items()}
 
     # =========================================================================

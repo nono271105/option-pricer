@@ -63,7 +63,7 @@ class ForecastLogic:
                 continue
 
             # la valeur intrinseque borne inferieurement le prix de l'option
-            intrinsic = max(0, S_i - strike) if option_type == "call" else max(0, strike - S_i)
+            intrinsic = max(0, S_i * np.exp(-q*T_i) - strike * np.exp(-r*T_i)) if option_type == "call" else max(0, strike * np.exp(-r*T_i) - S_i * np.exp(-q*T_i))
             if price_i < intrinsic:
                 continue
 

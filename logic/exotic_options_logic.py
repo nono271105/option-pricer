@@ -20,6 +20,7 @@ class ExoticResult:
     std_error: Optional[float]       # Seulement pour MC
     price_paths: Optional[np.ndarray]  # Échantillon de trajectoires pour le graphique
     payoffs: Optional[np.ndarray]    # Distribution des payoffs simulés
+    ci_95: Optional[Tuple[float, float]] = None # Intervalle de confiance à 95%
 
 
 # ---------------------------------------------------------------------------
@@ -39,9 +40,9 @@ def _d1_d2(S: float, K: float, T: float, r: float,
 
 def _simulate_paths(S: float, T: float, r: float, sigma: float,
                     q: float, n_steps: int, n_sims: int,
-                    seed: int = 42) -> np.ndarray:
+                    seed: Optional[int] = None) -> np.ndarray:
     """
-    Génère des trajectoires GBM (Geometric Brownian Motion).
+    Génère des trajectoires GBM (Geometric Brownian Motion) avec variables antithétiques.
 
     Returns:
         Array shape (n_sims, n_steps + 1) avec S[0] = S.
@@ -50,7 +51,14 @@ def _simulate_paths(S: float, T: float, r: float, sigma: float,
     dt = T / n_steps
     drift = (r - q - 0.5 * sigma ** 2) * dt
     diffusion = sigma * np.sqrt(dt)
-    Z = rng.standard_normal((n_sims, n_steps))
+    
+    half_sims = n_sims // 2
+    Z_half = rng.standard_normal((half_sims, n_steps))
+    Z = np.vstack([Z_half, -Z_half])
+    
+    if n_sims % 2 != 0:
+        Z = np.vstack([Z, rng.standard_normal((1, n_steps))])
+
     log_returns = drift + diffusion * Z
     log_paths = np.concatenate(
         [np.zeros((n_sims, 1)), np.cumsum(log_returns, axis=1)], axis=1
@@ -112,6 +120,11 @@ def price_barrier_analytical(
     d   = q          # dividend yield noté d dans le papier
     R   = rebate
     sqT = np.sqrt(tau)
+
+    if "up" in barrier_type and H <= S:
+        raise ValueError(f"Pour une barrière Up, le niveau H ({H}) doit être strictement supérieur au spot S ({S}).")
+    if "down" in barrier_type and H >= S:
+        raise ValueError(f"Pour une barrière Down, le niveau H ({H}) doit être strictement inférieur au spot S ({S}).")
 
     # initialisation des intermédiaires de calcul du modèle de Rubinstein
     mu  = r - d - 0.5 * sigma ** 2
@@ -192,9 +205,14 @@ def price_barrier_analytical(
 def price_barrier_mc(
     S: float, K: float, T: float, r: float, sigma: float,
     q: float, barrier: float, option_type: str, barrier_type: str,
-    n_sims: int = 50_000, n_steps: int = 252, seed: int = 42
+    n_sims: int = 50_000, n_steps: int = 252, seed: Optional[int] = None
 ) -> ExoticResult:
-    """Monte Carlo pour options barrières."""
+    """Monte Carlo pour options barrières avec correction Broadie-Glasserman-Kou."""
+    if "up" in barrier_type and barrier <= S:
+        raise ValueError(f"Pour une barrière Up, le niveau H ({barrier}) doit être strictement supérieur au spot S ({S}).")
+    if "down" in barrier_type and barrier >= S:
+        raise ValueError(f"Pour une barrière Down, le niveau H ({barrier}) doit être strictement inférieur au spot S ({S}).")
+
     paths = _simulate_paths(S, T, r, sigma, q, n_steps, n_sims, seed)
     S_T = paths[:, -1]
     phi = 1 if option_type == "call" else -1
@@ -206,10 +224,13 @@ def price_barrier_mc(
     is_up = "up" in barrier_type
     is_out = "out" in barrier_type
 
+    beta = 0.5825971579
     if is_up:
-        breached = path_max >= barrier
+        adj_barrier = barrier * np.exp(beta * sigma * np.sqrt(T / n_steps))
+        breached = path_max >= adj_barrier
     else:
-        breached = path_min <= barrier
+        adj_barrier = barrier * np.exp(-beta * sigma * np.sqrt(T / n_steps))
+        breached = path_min <= adj_barrier
 
     if is_out:
         alive = ~breached
@@ -220,6 +241,7 @@ def price_barrier_mc(
     discount = np.exp(-r * T)
     price = discount * payoffs.mean()
     std_err = discount * payoffs.std() / np.sqrt(n_sims)
+    ci_95 = (float(price - 1.96 * std_err), float(price + 1.96 * std_err))
 
     # extraction d'un sous-ensemble représentatif pour l'affichage visuel
     sample_idx = np.random.default_rng(seed).choice(n_sims, size=min(200, n_sims), replace=False)
@@ -229,6 +251,7 @@ def price_barrier_mc(
         std_error=round(float(std_err), 6),
         price_paths=paths[sample_idx],
         payoffs=payoffs,
+        ci_95=ci_95,
     )
 
 
@@ -239,7 +262,7 @@ def price_barrier_mc(
 def price_asian_mc(
     S: float, K: float, T: float, r: float, sigma: float,
     q: float, option_type: str, averaging: str = "arithmetic",
-    n_sims: int = 50_000, n_steps: int = 252, seed: int = 42
+    n_sims: int = 50_000, n_steps: int = 252, seed: Optional[int] = None
 ) -> ExoticResult:
     """Monte Carlo pour options asiatiques."""
     paths = _simulate_paths(S, T, r, sigma, q, n_steps, n_sims, seed)
@@ -254,6 +277,7 @@ def price_asian_mc(
     discount = np.exp(-r * T)
     price = discount * payoffs.mean()
     std_err = discount * payoffs.std() / np.sqrt(n_sims)
+    ci_95 = (float(price - 1.96 * std_err), float(price + 1.96 * std_err))
 
     sample_idx = np.random.default_rng(seed).choice(n_sims, size=min(200, n_sims), replace=False)
     return ExoticResult(
@@ -262,6 +286,7 @@ def price_asian_mc(
         std_error=round(float(std_err), 6),
         price_paths=paths[sample_idx],
         payoffs=payoffs,
+        ci_95=ci_95,
     )
 
 
@@ -272,22 +297,26 @@ def price_asian_mc(
 def price_lookback_mc(
     S: float, T: float, r: float, sigma: float,
     q: float, option_type: str,
-    n_sims: int = 50_000, n_steps: int = 252, seed: int = 42
+    n_sims: int = 50_000, n_steps: int = 252, seed: Optional[int] = None
 ) -> ExoticResult:
     """Monte Carlo pour options lookback à strike flottant."""
     paths = _simulate_paths(S, T, r, sigma, q, n_steps, n_sims, seed)
     S_T = paths[:, -1]
 
+    beta = 0.5825971579
     if option_type == "call":
         S_min = paths.min(axis=1)
-        payoffs = np.maximum(S_T - S_min, 0)
+        S_min_adj = S_min * np.exp(-beta * sigma * np.sqrt(T / n_steps))
+        payoffs = np.maximum(S_T - S_min_adj, 0)
     else:
         S_max = paths.max(axis=1)
-        payoffs = np.maximum(S_max - S_T, 0)
+        S_max_adj = S_max * np.exp(beta * sigma * np.sqrt(T / n_steps))
+        payoffs = np.maximum(S_max_adj - S_T, 0)
 
     discount = np.exp(-r * T)
     price = discount * payoffs.mean()
     std_err = discount * payoffs.std() / np.sqrt(n_sims)
+    ci_95 = (float(price - 1.96 * std_err), float(price + 1.96 * std_err))
 
     sample_idx = np.random.default_rng(seed).choice(n_sims, size=min(200, n_sims), replace=False)
     return ExoticResult(
@@ -296,6 +325,7 @@ def price_lookback_mc(
         std_error=round(float(std_err), 6),
         price_paths=paths[sample_idx],
         payoffs=payoffs,
+        ci_95=ci_95,
     )
 
 
@@ -325,7 +355,7 @@ def price_digital_analytical(
 def price_digital_mc(
     S: float, K: float, T: float, r: float, sigma: float,
     q: float, option_type: str, payoff_amount: float = 1.0,
-    n_sims: int = 50_000, n_steps: int = 252, seed: int = 42
+    n_sims: int = 50_000, n_steps: int = 252, seed: Optional[int] = None
 ) -> ExoticResult:
     """Monte Carlo pour options digitales."""
     paths = _simulate_paths(S, T, r, sigma, q, n_steps, n_sims, seed)
@@ -339,6 +369,7 @@ def price_digital_mc(
     discount = np.exp(-r * T)
     price = discount * payoffs.mean()
     std_err = discount * payoffs.std() / np.sqrt(n_sims)
+    ci_95 = (float(price - 1.96 * std_err), float(price + 1.96 * std_err))
 
     sample_idx = np.random.default_rng(seed).choice(n_sims, size=min(200, n_sims), replace=False)
     return ExoticResult(
@@ -347,4 +378,5 @@ def price_digital_mc(
         std_error=round(float(std_err), 6),
         price_paths=paths[sample_idx],
         payoffs=payoffs,
+        ci_95=ci_95,
     )

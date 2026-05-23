@@ -34,12 +34,17 @@ class CRRModels:
         Returns:
             float: Prix théorique de l'option américaine
         """
+        if option_type not in ('call', 'put'):
+            raise ValueError("option_type doit être 'call' ou 'put'")
+
         if T <= 0 or N <= 0:
             if option_type == 'call':
                 return max(0, S - K)
-            elif option_type == 'put':
+            else:
                 return max(0, K - S)
-            raise ValueError("option_type doit être 'call' ou 'put'")
+
+        if N > 5000:
+            raise ValueError("N ne peut pas dépasser 5 000 (risque d'épuisement mémoire)")
 
         dt = T / N
         df = np.exp(-r * dt)
@@ -47,6 +52,11 @@ class CRRModels:
         u = np.exp(sigma * np.sqrt(dt))
         d = 1.0 / u
         p = (np.exp((r - q) * dt) - d) / (u - d)
+
+        if p < 0 or p > 1:
+            raise ValueError(
+                f"Probabilité risque-neutre p={p:.4f} hors [0,1]. "
+                f"Vérifiez les paramètres (r={r}, q={q}, sigma={sigma}, N={N}).")
 
         # construction vectorisée des prix terminaux du sous-jacent à maturité
         j_values = np.arange(N, -1, -1)
@@ -87,8 +97,7 @@ class CRRModels:
         q: float, 
         sigma: float, 
         N: int, 
-        option_type: Literal['call', 'put'], 
-        epsilon: float = 1.0
+        option_type: Literal['call', 'put'],
     ) -> Dict[str, float]:
         """
         Calcule les Grecs du modèle CRR par différences finies.
@@ -103,11 +112,15 @@ class CRRModels:
             sigma: Volatilité annualisée
             N: Nombre de pas dans l'arbre binomial
             option_type: 'call' ou 'put'
-            epsilon: Pas pour les différences finies (par défaut 1.0 pour meilleure précision numérique)
             
         Returns:
             Dict[str, float]: Dictionnaire avec clés 'delta', 'gamma', 'theta', 'vega', 'rho'
         """
+        if option_type not in ('call', 'put'):
+            raise ValueError("option_type doit être 'call' ou 'put'")
+
+        if N > 5000:
+            raise ValueError("N ne peut pas dépasser 5 000 (risque d'épuisement mémoire)")
         
         # les différences finies directes étant instables sur CRR, l'extraction 
         # des Grecs s'effectue directement depuis la géométrie des premiers nœuds
@@ -117,6 +130,11 @@ class CRRModels:
         u = np.exp(sigma * np.sqrt(dt))
         d = 1.0 / u
         p = (np.exp((r - q) * dt) - d) / (u - d)
+
+        if p < 0 or p > 1:
+            raise ValueError(
+                f"Probabilité risque-neutre p={p:.4f} hors [0,1]. "
+                f"Vérifiez les paramètres (r={r}, q={q}, sigma={sigma}, N={N}).")
         
         j_values = np.arange(N, -1, -1)
         stock_prices = S * (u**j_values) * (d**(N - j_values))

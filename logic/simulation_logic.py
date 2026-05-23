@@ -50,23 +50,21 @@ class SimulationLogic:
         if len(volatilities_percent) == 0 or len(underlying_prices) == 0:
             return np.array([]), np.array([]), np.array([]), []
 
-        results_matrix = np.zeros((len(volatilities_percent), len(underlying_prices)))
-        all_prices: List[float] = []
+        sigma_array = (volatilities_percent / 100.0)[:, None]
+        S_array = underlying_prices[None, :]
 
-        for i, vol_percent in enumerate(volatilities_percent):
-            sigma = vol_percent / 100.0
-            for j, S in enumerate(underlying_prices):
-                # valorisation unitaire via le modèle BSM
-                price = self.option_models.black_scholes_price(
-                    S=float(S),
-                    K=K,
-                    T=T,
-                    r=r,
-                    sigma=sigma,
-                    q=q,
-                    option_type=option_type,
-                )
-                results_matrix[i, j] = price
-                all_prices.append(price)
+        # valorisation vectorisée via le modèle BSM
+        results_matrix = self.option_models.black_scholes_price(
+            S=S_array,
+            K=K,
+            T=T,
+            r=r,
+            sigma=sigma_array,
+            q=q,
+            option_type=option_type,
+        )
+        
+        results_matrix = np.array(results_matrix)
+        all_prices = results_matrix.flatten().tolist()
 
         return volatilities_percent, underlying_prices, results_matrix, all_prices

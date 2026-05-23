@@ -26,7 +26,10 @@ class MarketDataStore:
 
     def unsubscribe(self, callback: Callable) -> None:
         """Retire un callback de la liste des abonnés."""
-        self._subscribers.remove(callback)
+        try:
+            self._subscribers.remove(callback)
+        except ValueError:
+            pass
 
     def update(self, **kwargs) -> None:
         """Met à jour les attributs et notifie tous les abonnés."""

@@ -193,7 +193,7 @@ class DataFetcher:
         
         url = f"https://api.stlouisfed.org/fred/series/observations?series_id=SOFR&api_key={self.fred_api_key}&file_type=json"
         try:
-            response = requests.get(url)
+            response = requests.get(url, timeout=15)
             response.raise_for_status() 
             data = response.json()
             
@@ -376,7 +376,7 @@ class DataFetcher:
             return None, None, closest_date
             
         # différence absolue pour identifier la ligne la plus proche
-        data['abs_diff'] = abs(data['strike'] - strike)
+        data = data.assign(abs_diff=lambda df: abs(df['strike'] - strike))
         closest_row = data.sort_values('abs_diff').iloc[0]
         
         iv = closest_row['impliedVolatility']
