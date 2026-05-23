@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 # constantes de configuration du modèle d'extraction
 NUM_EXPIRATIONS = 20
-MAX_DAYS_TO_MATURITY = 400
+MAX_DAYS_TO_MATURITY = 100
+MIN_DAYS_TO_MATURITY = 7
 MIN_STRIKES_REQUIRED = 5
 MAX_STRIKES_PER_EXPIRATION = 100
 MONEYNESS_MIN = 0.70
@@ -233,7 +234,7 @@ class ImpliedVolatilitySurface:
                 days_to_maturity = (exp_date - today).days
                 
                 # filtrage des maturités expirées ou trop proches
-                if days_to_maturity <= 1:
+                if days_to_maturity < MIN_DAYS_TO_MATURITY:
                     stats['expired'] += 1
                     continue
                 
