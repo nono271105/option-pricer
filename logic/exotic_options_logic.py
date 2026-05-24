@@ -226,10 +226,10 @@ def price_barrier_mc(
 
     beta = 0.5825971579
     if is_up:
-        adj_barrier = barrier * np.exp(beta * sigma * np.sqrt(T / n_steps))
+        adj_barrier = barrier * np.exp(-beta * sigma * np.sqrt(T / n_steps))
         breached = path_max >= adj_barrier
     else:
-        adj_barrier = barrier * np.exp(-beta * sigma * np.sqrt(T / n_steps))
+        adj_barrier = barrier * np.exp(+beta * sigma * np.sqrt(T / n_steps))
         breached = path_min <= adj_barrier
 
     if is_out:
