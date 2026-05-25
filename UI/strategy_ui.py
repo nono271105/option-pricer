@@ -43,7 +43,7 @@ class StrategyWorker(QThread):
     def run(self):
         try:
             p = self.params
-            legs = self.manager.build_legs(
+            legs, T_effective = self.manager.build_legs(
                 p["strategy_name"], p["S"], p["T"],
                 p["r"], p["sigma"], p["q"],
                 p["maturity_datetime"], p["ticker"],
@@ -54,11 +54,11 @@ class StrategyWorker(QThread):
 
             payoff       = self.manager.compute_payoff(legs, S_range)
             value_today  = self.manager.compute_value_today(
-                legs, S_range, p["S"], p["T"], p["r"], p["sigma"], p["q"],
+                legs, S_range, p["S"], T_effective, p["r"], p["sigma"], p["q"],
                 self.option_models)
             metrics      = self.manager.compute_metrics(legs, S_range, payoff)
             greeks       = self.manager.compute_greeks(
-                legs, p["S"], p["T"], p["r"], p["sigma"], p["q"],
+                legs, p["S"], T_effective, p["r"], p["sigma"], p["q"],
                 self.option_models)
 
             self.result_ready.emit({
@@ -387,10 +387,24 @@ class StrategyTab(QWidget):
         maturity_date_obj = date(maturity_qdate.year(),
                                  maturity_qdate.month(),
                                  maturity_qdate.day())
+        maturity_datetime = datetime(maturity_qdate.year(),
+                                     maturity_qdate.month(),
+                                     maturity_qdate.day())
         T = (maturity_date_obj - date.today()).days / 365.0
         if T <= 0:
             QMessageBox.warning(self, "Erreur", "La date d'échéance doit être dans le futur.")
             return
+
+        ticker = self._ticker or self.ticker_input.text().strip().upper()
+        if ticker and self._S is not None:
+            _, _, closest_date = self.data_fetcher.get_implied_volatility_and_price(
+                ticker, self._S, maturity_datetime, "call"
+            )
+            if closest_date:
+                closest_date_obj = datetime.strptime(closest_date, '%Y-%m-%d').date()
+                T = (closest_date_obj - date.today()).days / 365.0
+                if T <= 0:
+                    T = 1e-6
 
         strategy_name = self.strategy_combo.currentText()
         if not strategy_name:
@@ -408,9 +422,7 @@ class StrategyTab(QWidget):
             "r":                self._r,
             "sigma":            self._sigma,
             "q":                self._q,
-            "maturity_datetime": datetime(maturity_qdate.year(),
-                                          maturity_qdate.month(),
-                                          maturity_qdate.day()),
+            "maturity_datetime": maturity_datetime,
         }
 
         self._worker = StrategyWorker(params, self.manager,

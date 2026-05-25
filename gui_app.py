@@ -182,6 +182,10 @@ class OptionPricingApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erreur Traitement Données",
                 f"Erreur lors du traitement des données: {e}")
+            if hasattr(source_tab, 'fetch_data_button'):
+                source_tab.fetch_data_button.setEnabled(True)
+                source_tab.fetch_data_button.setText("Récupérer/Synchroniser les Données")
+            self._fetch_worker = None
 
     def _on_fetch_error(self, msg, source_tab):
         """Affiche l'erreur et réactive le bouton."""

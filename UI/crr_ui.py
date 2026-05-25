@@ -204,9 +204,9 @@ class CRRModelTab(QWidget):
                 QMessageBox.warning(self, "Données Manquantes",
                     "Veuillez Récupérer/Synchroniser les données de l'actif (S, r, q) d'abord.")
                 return
-            if K <= 0 or N <= 0 or N > 10000:
+            if K <= 0 or N < 3 or N > 10000:
                 QMessageBox.warning(self, "Erreur de Paramètres",
-                    "K doit être > 0, et le nombre de pas (N) doit être entre 1 et 10000.")
+                    "K doit être > 0, et le nombre de pas (N) doit être entre 3 et 10000.")
                 return
 
             today = date.today()
@@ -219,6 +219,13 @@ class CRRModelTab(QWidget):
             fetched_iv, market_price, closest_date = self.data_fetcher.get_implied_volatility_and_price(
                 self.current_ticker, K, maturity_datetime, option_type
             )
+
+            if closest_date:
+                closest_date_obj = datetime.strptime(closest_date, '%Y-%m-%d').date()
+                time_difference = closest_date_obj - today
+                T = time_difference.days / 365.0
+                if T <= 0:
+                    T = 1e-6
 
             if fetched_iv is not None and fetched_iv > 0.001 and market_price is not None:
                 sigma = fetched_iv
@@ -327,6 +334,22 @@ class CRRModelTab(QWidget):
             maturity_datetime = datetime(maturity_qdate.year(), maturity_qdate.month(), maturity_qdate.day())
             today = date.today()
             T = (maturity_datetime.date() - today).days / 365.0
+            if T <= 0:
+                QMessageBox.warning(self, "Erreur de Maturité", "La date d'échéance doit être dans le futur.")
+                return
+            if N < 3:
+                QMessageBox.warning(self, "Erreur de Paramètres",
+                    "Le nombre de pas (N) doit être entre 3 et 10000.")
+                return
+
+            fetched_iv, _, closest_date = self.data_fetcher.get_implied_volatility_and_price(
+                self.current_ticker, K, maturity_datetime, option_type
+            )
+            if closest_date:
+                closest_date_obj = datetime.strptime(closest_date, '%Y-%m-%d').date()
+                T = (closest_date_obj - today).days / 365.0
+                if T <= 0:
+                    T = 1e-6
 
             S_range = np.linspace(self.S * 0.7, self.S * 1.3, 50)
             greek_values = []

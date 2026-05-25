@@ -1,8 +1,7 @@
 import logging
-import math
 import numpy as np
-from typing import Literal, List, Dict
-from datetime import datetime
+from typing import Literal, List, Dict, Optional, Tuple
+from datetime import datetime, date
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +9,12 @@ logger = logging.getLogger(__name__)
 class StrategyManager:
     def __init__(self) -> None:
         pass
+
+    @staticmethod
+    def _time_to_expiry_from_closest_date(closest_date: str) -> float:
+        closest_date_obj = datetime.strptime(closest_date, '%Y-%m-%d').date()
+        T = (closest_date_obj - date.today()).days / 365.0
+        return max(T, 1e-6)
 
     # =========================================================================
     # Définitions des stratégies
@@ -143,28 +148,31 @@ class StrategyManager:
     def build_legs(self, strategy_name: str, S: float, T: float,
                    r: float, sigma: float, q: float,
                    maturity_datetime: datetime, ticker: str,
-                   data_fetcher, option_models) -> List[Dict]:
+                   data_fetcher, option_models) -> Tuple[List[Dict], float]:
         """
         Construit la liste de legs pour une stratégie donnée.
         Chaque leg contient : option_type, position, strike, premium (marché ou BSM).
 
         Returns:
-            List[Dict] avec clés : option_type, position, strike, premium
+            Tuple (legs, T_effectif) — T_effectif aligné sur l'échéance de la chaîne si prime marché.
         """
         definition = self.STRATEGY_DEFINITIONS.get(strategy_name)
         if definition is None:
             raise ValueError(f"Stratégie inconnue : {strategy_name}")
 
         legs = []
+        T_effective = T
         for leg_def in definition:
             strike = round(S * (1 + leg_def["offset"]))
 
             # valorisation hybride de la jambe : extraction de la cotation réelle ou pricing théorique si illiquide
-            premium = self._get_premium(
+            premium, T_leg = self._get_premium(
                 ticker, S, strike, T, r, sigma, q,
                 leg_def["type"], maturity_datetime,
                 data_fetcher, option_models
             )
+            if T_leg is not None:
+                T_effective = T_leg
 
             legs.append({
                 "option_type": leg_def["type"],
@@ -173,21 +181,25 @@ class StrategyManager:
                 "premium":     premium,
             })
 
-        return legs
+        return legs, T_effective
 
     def _get_premium(self, ticker: str, S_current: float, strike: float, T: float,
                      r: float, sigma: float, q: float,
                      option_type: str, maturity_datetime: datetime,
-                     data_fetcher, option_models) -> float:
+                     data_fetcher, option_models) -> Tuple[float, Optional[float]]:
         """
         Récupère la prime d'un leg : prix de marché via yfinance si dispo,
-        sinon calcul BSM.
+        sinon calcul BSM. Retourne (prime, T_aligné) où T_aligné est défini si la
+        cotation provient d'une échéance de chaîne proche.
         """
+        T_market: Optional[float] = None
         try:
-            _, market_price, _ = data_fetcher.get_implied_volatility_and_price(
+            _, market_price, closest_date = data_fetcher.get_implied_volatility_and_price(
                 ticker, strike, maturity_datetime, option_type)
+            if closest_date:
+                T_market = self._time_to_expiry_from_closest_date(closest_date)
             if market_price is not None and market_price > 0:
-                return float(market_price)
+                return float(market_price), T_market
         except Exception as exc:
             logger.warning("Prime marché indisponible pour %s %s K=%s, fallback BSM: %s",
                            ticker, option_type, strike, exc)
@@ -195,7 +207,7 @@ class StrategyManager:
         # si la cotation n'est pas fiable, on simule le prix théorique exact
         return option_models.black_scholes_price(S=S_current, K=strike, T=T,
                               r=r, sigma=sigma, q=q,
-                              option_type=option_type)
+                              option_type=option_type), None
 
     # =========================================================================
     # Calcul du payoff à maturité

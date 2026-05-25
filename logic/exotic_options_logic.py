@@ -115,6 +115,9 @@ def price_barrier_analytical(
         barrier_type : "up-and-out", "up-and-in", "down-and-out", "down-and-in"
         rebate       : montant versé si l'option est désactivée (défaut 0)
     """
+    if T <= 0 or sigma <= 0:
+        raise ValueError("T et sigma doivent être strictement positifs.")
+
     H   = barrier
     tau = T
     d   = q          # dividend yield noté d dans le papier
@@ -205,9 +208,12 @@ def price_barrier_analytical(
 def price_barrier_mc(
     S: float, K: float, T: float, r: float, sigma: float,
     q: float, barrier: float, option_type: str, barrier_type: str,
-    n_sims: int = 50_000, n_steps: int = 252, seed: Optional[int] = None
+    n_sims: int = 50_000, n_steps: int = 252, seed: Optional[int] = None,
+    rebate: float = 0.0,
 ) -> ExoticResult:
     """Monte Carlo pour options barrières avec correction Broadie-Glasserman-Kou."""
+    if T <= 0 or sigma <= 0:
+        raise ValueError("T et sigma doivent être strictement positifs.")
     if "up" in barrier_type and barrier <= S:
         raise ValueError(f"Pour une barrière Up, le niveau H ({barrier}) doit être strictement supérieur au spot S ({S}).")
     if "down" in barrier_type and barrier >= S:
@@ -237,7 +243,7 @@ def price_barrier_mc(
     else:
         alive = breached
 
-    payoffs = np.where(alive, intrinsic, 0.0)
+    payoffs = np.where(alive, intrinsic, rebate)
     discount = np.exp(-r * T)
     price = discount * payoffs.mean()
     std_err = discount * payoffs.std() / np.sqrt(n_sims)

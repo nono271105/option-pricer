@@ -119,6 +119,9 @@ class CRRModels:
         if option_type not in ('call', 'put'):
             raise ValueError("option_type doit être 'call' ou 'put'")
 
+        if N < 3:
+            raise ValueError(
+                "Le nombre de pas N doit être ≥ 3 pour calculer Delta, Gamma et Theta (C1/C2 requis).")
         if N > 5000:
             raise ValueError("N ne peut pas dépasser 5 000 (risque d'épuisement mémoire)")
         

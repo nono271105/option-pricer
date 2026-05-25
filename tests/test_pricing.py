@@ -12,7 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from logic.bsm_logic import OptionModels
 from logic.crr_logic import CRRModels
 from logic.exotic_options_logic import (
+    _simulate_paths,
     price_barrier_analytical,
+    price_barrier_mc,
     price_digital_analytical,
     price_asian_mc,
     price_lookback_mc,
@@ -273,6 +275,12 @@ class TestCRR:
             f"premium={premium:.4f}, pct={_pct(crr_put, bsm_put)}"
         )
 
+    def test_crr_greeks_requires_min_steps(self):
+        with pytest.raises(ValueError, match="≥ 3"):
+            crr_models.calculate_greeks_crr(
+                100, 100, 1.0, 0.05, 0.00, 0.20, 2, "call"
+            )
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # BARRIÈRES
@@ -375,6 +383,74 @@ class TestBarriers:
         assert (di + do) == pytest.approx(vanilla, abs=TOL), (
             f"In-out parity put: DI+DO={di + do:.4f}, vanilla={vanilla:.4f}, "
             f"pct={_pct(di + do, vanilla)}"
+        )
+
+    def test_barrier_analytical_rejects_invalid_inputs(self):
+        with pytest.raises(ValueError, match="strictement positifs"):
+            price_barrier_analytical(
+                self._S, self._K, 0.0, self._r, self._sig, self._q,
+                90, "call", "down-and-out",
+            )
+
+
+class TestBarrierMC:
+
+    _S, _K, _T, _r, _sig, _q = 100, 100, 1.0, 0.05, 0.20, 0.00
+    _n_sims, _n_steps, _seed = 80_000, 252, 42
+
+    def test_barrier_mc_near_analytical_down_out_call(self):
+        expected = GOLDEN["barrier_down_out_call"]
+        res = price_barrier_mc(
+            self._S, self._K, self._T, self._r, self._sig, self._q,
+            90, "call", "down-and-out",
+            n_sims=self._n_sims, n_steps=self._n_steps, seed=self._seed,
+        )
+        assert res.price == pytest.approx(expected, abs=TOL_MC), (
+            f"Barrier MC down-out call: expected={expected:.4f}, got={res.price:.4f}, "
+            f"diff={abs(res.price - expected):.4f}, pct={_pct(res.price, expected)}"
+        )
+        assert res.std_error is not None and res.std_error > 0
+
+    def test_barrier_mc_rejects_invalid_inputs(self):
+        with pytest.raises(ValueError, match="strictement positifs"):
+            price_barrier_mc(
+                self._S, self._K, 0.0, self._r, self._sig, self._q,
+                90, "call", "down-and-out",
+            )
+
+    def test_barrier_mc_rebate_increases_knockout_value(self):
+        base = price_barrier_mc(
+            self._S, self._K, self._T, self._r, self._sig, self._q,
+            90, "call", "down-and-out",
+            n_sims=self._n_sims, n_steps=self._n_steps, seed=self._seed,
+            rebate=0.0,
+        ).price
+        with_rebate = price_barrier_mc(
+            self._S, self._K, self._T, self._r, self._sig, self._q,
+            90, "call", "down-and-out",
+            n_sims=self._n_sims, n_steps=self._n_steps, seed=self._seed,
+            rebate=1.0,
+        ).price
+        assert with_rebate > base
+
+    def test_barrier_mc_beta_adjustment_differs_from_naive(self):
+        """La correction BGK (β) doit modifier le prix par rapport à une barrière non ajustée."""
+        adjusted = price_barrier_mc(
+            self._S, self._K, self._T, self._r, self._sig, self._q,
+            90, "call", "down-and-out",
+            n_sims=20_000, n_steps=self._n_steps, seed=7,
+        ).price
+
+        paths = _simulate_paths(
+            self._S, self._T, self._r, self._sig, self._q, self._n_steps, 20_000, 7
+        )
+        barrier = 90.0
+        intrinsic = np.maximum(paths[:, -1] - self._K, 0)
+        breached = paths.min(axis=1) <= barrier
+        naive = np.exp(-self._r * self._T) * np.where(~breached, intrinsic, 0.0).mean()
+
+        assert adjusted != pytest.approx(naive, abs=0.05), (
+            f"BGK-adjusted ({adjusted:.4f}) ~= naive ({naive:.4f}) — correction inactive?"
         )
 
 

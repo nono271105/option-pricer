@@ -536,6 +536,13 @@ class ExoticOptionsTab(QWidget):
         fetched_iv, market_price, closest_date = self.data_fetcher.get_implied_volatility_and_price(
             self._ticker, K, maturity_datetime, option_type
         )
+
+        if closest_date:
+            closest_date_obj = datetime.strptime(closest_date, '%Y-%m-%d').date()
+            time_difference = closest_date_obj - date.today()
+            T = time_difference.days / 365.0
+            if T <= 0:
+                T = 1e-6
         
         # cascade de sélection de la volatilité pertinente
         if fetched_iv is not None and fetched_iv > 0.001:

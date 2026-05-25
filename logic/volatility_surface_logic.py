@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 NUM_EXPIRATIONS = 20
 MAX_DAYS_TO_MATURITY = 100
 MIN_DAYS_TO_MATURITY = 7
-MIN_STRIKES_REQUIRED = 5
-MAX_STRIKES_PER_EXPIRATION = 100
 MONEYNESS_MIN = 0.70
 MONEYNESS_MAX = 1.30
 MAX_SPREAD_PCT = 0.50
@@ -343,8 +341,8 @@ class ImpliedVolatilitySurface:
         self, 
         surface_data: pd.DataFrame,
         current_price: Optional[float] = None,
-        strike_grid_size: int = 30,
-        maturity_grid_size: int = 20
+        strike_grid_size: int = STRIKE_GRID_SIZE,
+        maturity_grid_size: int = MATURITY_GRID_SIZE,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Interpole les données de surface pour créer une grille lisse 3D.
@@ -373,8 +371,8 @@ class ImpliedVolatilitySurface:
         strike_range = strike_max - strike_min
         maturity_range = maturity_max - maturity_min
         
-        strike_min -= strike_range * 0.05
-        strike_max += strike_range * 0.05
+        strike_min -= strike_range * DATA_PADDING_PERCENT
+        strike_max += strike_range * DATA_PADDING_PERCENT
 
         # sécurisation de la borne inférieure du sous-jacent
         floor = current_price * 0.5 if current_price else 1.0
@@ -392,7 +390,7 @@ class ImpliedVolatilitySurface:
             points, 
             values, 
             (X_mesh, Y_mesh),
-            method='cubic'
+            method=INTERPOLATION_METHOD,
         )
         
         # correction des lacunes par l'approche du plus proche voisin
@@ -402,7 +400,7 @@ class ImpliedVolatilitySurface:
                 points,
                 values,
                 (X_mesh[mask_nan], Y_mesh[mask_nan]),
-                method='nearest'
+                method=INTERPOLATION_FALLBACK,
             )
 
         # redressement des aberrations mathématiques générées aux frontières de l'interpolation
@@ -412,7 +410,7 @@ class ImpliedVolatilitySurface:
                 points,
                 values,
                 (X_mesh[mask_invalid], Y_mesh[mask_invalid]),
-                method='nearest'
+                method=INTERPOLATION_FALLBACK,
             )
 
         return X_mesh, Y_mesh, Z_mesh
