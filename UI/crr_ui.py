@@ -83,6 +83,7 @@ class CRRModelTab(QWidget):
         self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
+        self.maturity_date_input.setToolTip("Date théorique libre")
         control_form_layout.addRow("Date d'échéance:", self.maturity_date_input)
 
         self.position_combo = QComboBox()
@@ -126,7 +127,7 @@ class CRRModelTab(QWidget):
         current_data_layout.addRow("Prix Actuel (S):", self.live_price_label)
         current_data_layout.addRow("Taux Sans Risque SOFR (r):", self.risk_free_rate_label)
         current_data_layout.addRow("Rendement Dividende (q):", self.dividend_yield_label)
-        current_data_layout.addRow("Volatilité Utilisée (σ):", self.volatility_label)
+        current_data_layout.addRow("Volatilité (σ):", self.volatility_label)
         current_data_layout.addRow("Prix de l'option (CRR):", self.crr_price_label)
         current_data_group.setLayout(current_data_layout)
         display_panel_layout.addWidget(current_data_group)
@@ -182,9 +183,11 @@ class CRRModelTab(QWidget):
         self.risk_free_rate_label.setText(f"{store.r*100:.2f}%" if store.r is not None else "N/A")
         self.dividend_yield_label.setText(f"{store.q*100:.2f}%" if store.q is not None else "N/A")
 
-        sigma_used = store.sigma if store.sigma is not None else (store.historical_vol if store.historical_vol is not None else 0.20)
-        pm = store.pricing_method if store.pricing_method != "N/A" else "Vol Historique"
-        self.volatility_label.setText(f"{sigma_used*100:.2f}% ({pm})")
+        if store.sigma is not None:
+            suffix = " (IV)" if "IV" in (store.pricing_method or "") else " (historique)"
+            self.volatility_label.setText(f"{store.sigma*100:.2f}%{suffix}")
+        else:
+            self.volatility_label.setText("NC")
 
         self.fetch_data_button.setEnabled(True)
         self.fetch_data_button.setText("Récupérer/Synchroniser les Données")
@@ -234,7 +237,8 @@ class CRRModelTab(QWidget):
                 sigma = self.historical_vol if self.historical_vol is not None and self.historical_vol > 0 else 0.20
                 pricing_method_used = "Vol Historique (Fallback)"
 
-            self.volatility_label.setText(f"{sigma*100:.2f}% ({pricing_method_used})")
+            suffix = " (IV)" if "IV" in pricing_method_used else " (historique)"
+            self.volatility_label.setText(f"{sigma*100:.2f}%{suffix}")
 
             crr_price = self.crr_models.cox_ross_rubinstein_price(
                 self.S, K, T, self.r, self.q, sigma, N, option_type

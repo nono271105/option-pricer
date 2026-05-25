@@ -22,6 +22,38 @@ class ForecastLogic:
 
     def __init__(self, option_models):
         self.option_models = option_models
+        self._timesfm_model = None
+        self._timesfm_horizon = None
+
+    def _get_timesfm_model(self, horizon: int):
+        import torch
+        import timesfm
+
+        if self._timesfm_model is None:
+            if torch.cuda.is_available():
+                logger.info("[Forecast IV] CUDA detecte, TimesFM utilisera le GPU (%s).", torch.cuda.get_device_name(0))
+            else:
+                logger.info("[Forecast IV] CUDA non disponible, TimesFM utilisera le CPU.")
+
+            self._timesfm_model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
+                "google/timesfm-2.5-200m-pytorch",
+                torch_compile=False,
+            )
+
+        if self._timesfm_horizon != horizon:
+            logger.info("[Forecast IV] Recompilation TimesFM pour horizon=%d...", horizon)
+            self._timesfm_model.compile(
+                timesfm.ForecastConfig(
+                    max_context=1024,
+                    max_horizon=horizon,
+                    normalize_inputs=True,
+                    use_continuous_quantile_head=True,
+                    fix_quantile_crossing=True,
+                )
+            )
+            self._timesfm_horizon = horizon
+
+        return self._timesfm_model
 
     def compute_iv_from_prices(
         self,
@@ -104,30 +136,9 @@ class ForecastLogic:
         Returns:
             Tuple contenant (point_forecast, quantile_forecast, iv_history)
         """
-        import torch
-        import timesfm
-
-        if torch.cuda.is_available():
-            logger.info("[Forecast IV] CUDA detecte, TimesFM utilisera le GPU (%s).", torch.cuda.get_device_name(0))
-        else:
-            logger.info("[Forecast IV] CUDA non disponible, TimesFM utilisera le CPU.")
-
         iv_input = iv_history.astype(np.float32)
 
-        model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
-            "google/timesfm-2.5-200m-pytorch",
-            torch_compile=False,
-        )
-
-        model.compile(
-            timesfm.ForecastConfig(
-                max_context=1024,
-                max_horizon=horizon,
-                normalize_inputs=True,
-                use_continuous_quantile_head=True,
-                fix_quantile_crossing=True,
-            )
-        )
+        model = self._get_timesfm_model(horizon)
 
         point_forecast, quantile_forecast = model.forecast(
             horizon=horizon,
@@ -190,7 +201,7 @@ class ForecastLogic:
         deltas = np.array(deltas)
 
         # tranche historique pour la continuite du trace
-        n_hist_display = min(30, len(iv_history))
+        n_hist_display = len(iv_history)
         iv_hist_slice = iv_history[-n_hist_display:]
         x_hist = np.arange(-n_hist_display, 0)
 

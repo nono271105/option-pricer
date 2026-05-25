@@ -89,6 +89,7 @@ class BSMTab(QWidget):
         self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
+        self.maturity_date_input.setToolTip("Date théorique libre")
         control_form_layout.addRow("Date d'échéance:", self.maturity_date_input)
 
         self.position_combo = QComboBox()
@@ -123,13 +124,15 @@ class BSMTab(QWidget):
         self.risk_free_rate_label = QLabel("N/A")
         self.dividend_yield_label = QLabel("N/A")
         self.historical_vol_label = QLabel("N/A")
+        self.market_price_label = QLabel("N/A")
         self.bs_price_label = QLabel("N/A")
 
         current_data_layout.addRow("Prix Actuel (S):", self.live_price_label)
         current_data_layout.addRow("Taux Sans Risque SOFR (r):", self.risk_free_rate_label)
         current_data_layout.addRow("Rendement Dividende (q):", self.dividend_yield_label)
-        current_data_layout.addRow("Volatilité Utilisée (σ):", self.historical_vol_label)
-        current_data_layout.addRow("Prix de l'option (BSM):", self.bs_price_label)
+        current_data_layout.addRow("Volatilité (σ):", self.historical_vol_label)
+        current_data_layout.addRow("Prix du marché :", self.market_price_label)
+        current_data_layout.addRow("Prix théorique :", self.bs_price_label)
         current_data_group.setLayout(current_data_layout)
         display_panel_layout.addWidget(current_data_group)
 
@@ -180,9 +183,11 @@ class BSMTab(QWidget):
         self.risk_free_rate_label.setText(f"{store.r*100:.2f}%" if store.r is not None else "N/A")
         self.dividend_yield_label.setText(f"{store.q*100:.2f}%" if store.q is not None else "N/A")
 
-        sigma_to_use = store.sigma if store.sigma is not None else (store.historical_vol if store.historical_vol is not None else 0.20)
-        pm = store.pricing_method if store.pricing_method != "N/A" else "Vol Historique"
-        self.historical_vol_label.setText(f"{pm}: {sigma_to_use*100:.2f}%")
+        if store.sigma is not None:
+            suffix = " (IV)" if "IV" in (store.pricing_method or "") else " (historique)"
+            self.historical_vol_label.setText(f"{store.sigma*100:.2f}%{suffix}")
+        else:
+            self.historical_vol_label.setText("NC")
 
         if store.ticker:
             self.ticker_input.setText(store.ticker)
@@ -217,8 +222,11 @@ class BSMTab(QWidget):
                 today = date.today()
                 time_difference = closest_date_obj - today
                 self.T = time_difference.days / 365.0
-                if self.T < 0:
-                    self.T = 1e-6
+                if self.T <= 0:
+                    QMessageBox.warning(self, "Échéance expirée",
+                        f"L'échéance disponible la plus proche ({closest_date}) est déjà expirée. "
+                        "Veuillez sélectionner une date ultérieure.")
+                    return
             else:
                 today = date.today()
                 time_difference = maturity_datetime.date() - today
@@ -230,9 +238,11 @@ class BSMTab(QWidget):
             if fetched_iv is not None and fetched_iv > 0.001 and market_price is not None:
                 sigma = fetched_iv
                 self.pricing_method = "IV Marché"
+                self.market_price_label.setText(f"{market_price:.4f} $")
             else:
                 sigma = self.historical_vol if self.historical_vol is not None and self.historical_vol > 0 else 0.20
                 self.pricing_method = "Vol Historique (Fallback)"
+                self.market_price_label.setText("N/A")
                 if self.historical_vol is None or self.historical_vol <= 0 or fetched_iv is None:
                     QMessageBox.information(self, "Volatilité",
                         f"L'IV du marché n'est pas disponible. "
@@ -244,7 +254,8 @@ class BSMTab(QWidget):
 
             self.current_sigma = sigma
 
-            self.historical_vol_label.setText(f"Utilisée ({self.pricing_method}): {self.current_sigma*100:.2f}%")
+            suffix = " (IV)" if "IV" in self.pricing_method else " (historique)"
+            self.historical_vol_label.setText(f"{self.current_sigma*100:.2f}%{suffix}")
             self.bs_price_label.setText(f"{bs_price:.4f} $")
 
             greeks = self.option_models.calculate_greeks(

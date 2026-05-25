@@ -212,15 +212,12 @@ class ForecastTimesFMTab(QWidget):
         )
         form.addRow("Statut :", self.status_label)
 
-        # rappel des conditions de marche
         self.s_label = QLabel("N/A")
         self.r_label = QLabel("N/A")
         self.q_label = QLabel("N/A")
-        self.sigma_label = QLabel("N/A")
         form.addRow("Prix Actuel (S) :", self.s_label)
         form.addRow("Taux sans risque (r) :", self.r_label)
         form.addRow("Dividende (q) :", self.q_label)
-        form.addRow("Volatilité (σ) :", self.sigma_label)
 
         control_group.setLayout(form)
         control_panel.addWidget(control_group)
@@ -240,7 +237,7 @@ class ForecastTimesFMTab(QWidget):
         main_layout.addWidget(plot_group, 3)
 
     # ecoute active des changements d'etat global
-    def update_financial_params(self, ticker, S, r, q, sigma):
+    def update_financial_params(self, ticker, S, r, q):
         """
         Appelee par l'app principale pour synchroniser les parametres
         financiers partages entre onglets.
@@ -259,9 +256,6 @@ class ForecastTimesFMTab(QWidget):
         if q is not None:
             self.q = q
             self.q_label.setText(f"{q*100:.2f} %")
-        if sigma is not None:
-            self.sigma = sigma
-            self.sigma_label.setText(f"{sigma*100:.2f} %")
 
     def update_company_name(self, company_name: str) -> None:
         """Met a jour le label du nom de l'entreprise."""
@@ -298,14 +292,48 @@ class ForecastTimesFMTab(QWidget):
         qd = self.maturity_date_input.date()
         maturity = date(qd.year(), qd.month(), qd.day())
         today = date.today()
+
+        # construction de la date d'expiration au format API
+        expiration_date = maturity.strftime("%Y-%m-%d")
+
+        # Verification de l'existence de l'expiration et ajustement
+        try:
+            import yfinance as yf
+            import datetime
+            tkr = yf.Ticker(ticker)
+            expirations = tkr.options
+            if expirations and expiration_date not in expirations:
+                # trouver la date la plus proche
+                closest_date = min(expirations, 
+                                   key=lambda x: abs(datetime.datetime.strptime(x, '%Y-%m-%d').date() - maturity))
+                reply = QMessageBox.question(
+                    self,
+                    "Échéance introuvable",
+                    f"L'échéance {expiration_date} n'existe pas sur le marché pour {ticker}.\n\n"
+                    f"Voulez-vous utiliser l'échéance réelle la plus proche ({closest_date}) ?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    # Update UI et continue
+                    closest_qdate = QDate.fromString(closest_date, "yyyy-MM-dd")
+                    self.maturity_date_input.setDate(closest_qdate)
+                    expiration_date = closest_date
+                    maturity = datetime.datetime.strptime(closest_date, "%Y-%m-%d").date()
+                else:
+                    # annulation du lancement du forecast
+                    return
+        except Exception as e:
+            # en cas d'erreur avec yfinance, on continue silencieusement
+            pass
+
         T_total = (maturity - today).days / 365.0
         if T_total <= 0:
             QMessageBox.warning(self, "Maturité invalide",
                                 "La date de maturité doit être dans le futur.")
             return
 
-        # construction de la date d'expiration au format API
-        expiration_date = maturity.strftime("%Y-%m-%d")
         option_type = self.option_type_combo.currentText()
 
         # verrouillage preventif de l'interface
@@ -344,9 +372,9 @@ class ForecastTimesFMTab(QWidget):
 
             S = self.S
 
-            # extraction des bornes de l'intervalle de confiance
+            # extraction des bornes de l'intervalle de confiance (TimesFM renvoie [mean, q10, q20, ..., q90])
             qf = quantile_forecast[0]
-            q10 = qf[:, 0]
+            q10 = qf[:, 1]
             q90 = qf[:, -1]
 
             # repricing avec les IV predites

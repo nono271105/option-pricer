@@ -273,7 +273,7 @@ class StrategyTab(QWidget):
         data_layout.addRow("Prix Actuel (S):",           self.live_price_label)
         data_layout.addRow("Taux Sans Risque SOFR (r):", self.risk_free_label)
         data_layout.addRow("Rendement Dividende (q):",   self.dividend_label)
-        data_layout.addRow("Volatilité Utilisée (σ):",   self.vol_label)
+        data_layout.addRow("Volatilité (σ):",   self.vol_label)
         data_group.setLayout(data_layout)
         right_layout.addWidget(data_group)
 
@@ -356,6 +356,7 @@ class StrategyTab(QWidget):
         self._r      = store.r
         self._q      = store.q
         self._sigma  = store.sigma
+        self._historical_vol = store.historical_vol
 
         if store.ticker and self.ticker_input.text().strip() == "":
             self.ticker_input.setText(store.ticker)
@@ -364,11 +365,10 @@ class StrategyTab(QWidget):
         self.risk_free_label.setText(f"{store.r*100:.2f}%" if store.r is not None else "N/A")
         self.dividend_label.setText(f"{store.q*100:.2f}%" if store.q is not None else "N/A")
         if store.sigma is not None:
-            pm = store.pricing_method if store.pricing_method else ""
-            suffix = f" ({pm})" if pm else ""
+            suffix = " (IV)" if "IV" in (store.pricing_method or "") else " (historique)"
             self.vol_label.setText(f"{store.sigma*100:.2f}%{suffix}")
         else:
-            self.vol_label.setText("N/A")
+            self.vol_label.setText("NC")
 
         self.company_name_label.setText(store.company_name if store.company_name else "N/A")
 
@@ -378,7 +378,7 @@ class StrategyTab(QWidget):
     # orchestration de la chaîne de valorisation
 
     def _on_calculate(self):
-        if self._S is None or self._r is None or self._q is None or self._sigma is None:
+        if self._S is None or self._r is None or self._q is None:
             QMessageBox.warning(self, "Données manquantes",
                                 "Veuillez d'abord récupérer les données financières.")
             return
@@ -396,8 +396,11 @@ class StrategyTab(QWidget):
             return
 
         ticker = self._ticker or self.ticker_input.text().strip().upper()
+
+        # Calcul de la volatilité (IV ou fallback historique)
+        fetched_iv = None
         if ticker and self._S is not None:
-            _, _, closest_date = self.data_fetcher.get_implied_volatility_and_price(
+            fetched_iv, _, closest_date = self.data_fetcher.get_implied_volatility_and_price(
                 ticker, self._S, maturity_datetime, "call"
             )
             if closest_date:
@@ -405,6 +408,20 @@ class StrategyTab(QWidget):
                 T = (closest_date_obj - date.today()).days / 365.0
                 if T <= 0:
                     T = 1e-6
+
+        if fetched_iv is not None and fetched_iv > 0.001:
+            sigma = fetched_iv
+            pricing_method = "IV Marché"
+        else:
+            sigma = self._historical_vol if self._historical_vol and self._historical_vol > 0 else 0.20
+            pricing_method = "Vol Historique (Fallback)"
+
+        self._sigma = sigma
+        suffix = " (IV)" if "IV" in pricing_method else " (historique)"
+        self.vol_label.setText(f"{sigma*100:.2f}%{suffix}")
+        
+        # Propagation de la nouvelle IV au reste de l'application
+        self.store.update(sigma=sigma, pricing_method=pricing_method)
 
         strategy_name = self.strategy_combo.currentText()
         if not strategy_name:
@@ -416,11 +433,11 @@ class StrategyTab(QWidget):
 
         params = {
             "strategy_name":    strategy_name,
-            "ticker":           self._ticker or self.ticker_input.text().strip().upper(),
+            "ticker":           ticker,
             "S":                self._S,
             "T":                T,
             "r":                self._r,
-            "sigma":            self._sigma,
+            "sigma":            sigma,
             "q":                self._q,
             "maturity_datetime": maturity_datetime,
         }
@@ -489,6 +506,8 @@ class StrategyTab(QWidget):
         greek_keys = ["delta", "gamma", "theta", "vega", "rho"]
         for col, key in enumerate(greek_keys):
             val = greeks.get(key, 0)
+            if key == "vega":
+                val = val / 100
             item = QTableWidgetItem(f"{val:.4f}")
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if key in ("delta", "theta", "rho"):

@@ -171,7 +171,7 @@ class StrategyManager:
                 leg_def["type"], maturity_datetime,
                 data_fetcher, option_models
             )
-            if T_leg is not None:
+            if T_leg is not None and T_effective == T:
                 T_effective = T_leg
 
             legs.append({

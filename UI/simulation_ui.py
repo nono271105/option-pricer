@@ -75,6 +75,7 @@ class CallPriceSimulationTab(QWidget):
         self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
+        self.maturity_date_input.setToolTip("Date théorique libre")
         params_form.addRow("Date d'échéance:", self.maturity_date_input)
 
         # déclenchement de la matrice de calcul

@@ -299,6 +299,7 @@ class ExoticOptionsTab(QWidget):
         self.maturity_date_input = QDateEdit(get_default_maturity_date())
         self.maturity_date_input.setCalendarPopup(True)
         self.maturity_date_input.setDisplayFormat("dd/MM/yyyy")
+        self.maturity_date_input.setToolTip("Date théorique libre")
         form.addRow("Date d'échéance:", self.maturity_date_input)
 
         self.position_combo = QComboBox()
@@ -385,7 +386,7 @@ class ExoticOptionsTab(QWidget):
         data_layout.addRow("Prix Actuel (S):",           self.live_price_label)
         data_layout.addRow("Taux Sans Risque SOFR (r):", self.risk_free_label)
         data_layout.addRow("Rendement Dividende (q):",   self.dividend_label)
-        data_layout.addRow("Volatilité Utilisée (σ):",   self.vol_label)
+        data_layout.addRow("Volatilité (σ):",   self.vol_label)
         data_group.setLayout(data_layout)
         right_layout.addWidget(data_group)
 
@@ -471,6 +472,7 @@ class ExoticOptionsTab(QWidget):
         self._r      = store.r
         self._q      = store.q
         self._sigma  = store.sigma
+        self._historical_vol = store.historical_vol
 
         if store.ticker and self.ticker_input.text().strip() == "":
             self.ticker_input.setText(store.ticker)
@@ -480,11 +482,10 @@ class ExoticOptionsTab(QWidget):
         self.dividend_label.setText(f"{store.q*100:.2f}%" if store.q is not None else "N/A")
 
         if store.sigma is not None:
-            pm = store.pricing_method if store.pricing_method else ""
-            suffix = f" ({pm})" if pm else ""
+            suffix = " (IV)" if "IV" in (store.pricing_method or "") else " (historique)"
             self.vol_label.setText(f"{store.sigma*100:.2f}%{suffix}")
         else:
-            self.vol_label.setText("N/A")
+            self.vol_label.setText("NC")
 
         self.company_name_label.setText(store.company_name if store.company_name else "N/A")
 
@@ -549,11 +550,12 @@ class ExoticOptionsTab(QWidget):
             sigma = fetched_iv
             pricing_method = "IV Marché"
         else:
-            sigma = self._sigma if self._sigma is not None and self._sigma > 0 else 0.20
+            sigma = self._historical_vol if self._historical_vol is not None and self._historical_vol > 0 else 0.20
             pricing_method = "Vol Historique (Fallback)"
         
         # rafraîchissement visuel du paramètre retenu
-        self.vol_label.setText(f"{sigma*100:.2f}% ({pricing_method})")
+        suffix = " (IV)" if "IV" in pricing_method else " (historique)"
+        self.vol_label.setText(f"{sigma*100:.2f}%{suffix}")
 
         try:
             n_sims  = int(self.nsims_input.text())
@@ -603,6 +605,7 @@ class ExoticOptionsTab(QWidget):
             "n_sims"       : n_sims,
             "n_steps"      : n_steps,
             "seed"         : seed,
+            "pricing_method": pricing_method,
         }
 
     # exécution asynchrone des modèles mathématiques
@@ -611,6 +614,9 @@ class ExoticOptionsTab(QWidget):
         params = self._collect_params()
         if params is None:
             return
+
+        # Propagation de la nouvelle IV au reste de l'application
+        self.store.update(sigma=params["sigma"], pricing_method=params["pricing_method"])
 
         self.calculate_button.setEnabled(False)
         self.calculate_button.setText("⏳ Calcul en cours...")

@@ -132,7 +132,13 @@ class OptionPricingApp(QWidget):
         """Callback — met à jour le store, qui notifie automatiquement tous les tabs."""
         try:
             S = live_price if live_price is not None else None
-            r = sofr if sofr is not None else 0.01
+            if sofr is None:
+                QMessageBox.information(self, "Taux SOFR", 
+                    "Taux SOFR indisponible. Fallback : r = 5%. (0.05)")
+            r = sofr if sofr is not None else 0.05
+            if dividend is None:
+                QMessageBox.information(self, "Taux de Dividend", 
+                    "Taux de dividend indisponible. Fallback : q = 0.0%.")
             q = dividend if dividend is not None else 0.0
             hist_vol = volatility if volatility is not None else 0.20
 
@@ -141,22 +147,20 @@ class OptionPricingApp(QWidget):
                     f"Impossible de récupérer le prix de {ticker}.")
 
             # Le MarketDataStore notifie ensuite ses abonnés de la mise à jour
+            # sigma reste None (affiché "NC") jusqu'à ce que l'utilisateur clique sur "Calculer"
             self.store.update(
                 ticker=ticker,
                 S=S,
                 r=r,
                 q=q,
                 historical_vol=hist_vol,
-                sigma=hist_vol,
+                sigma=None,
                 company_name=company_name,
-                pricing_method="Vol Historique",
+                pricing_method="NC",
             )
 
             # Synchronisation explicite pour les onglets non connectés au store
-            sigma_to_use = hist_vol
-            pricing_method = "Vol Historique"
-
-            self.simulation_tab.update_financial_data(ticker, S, r, q, sigma_to_use)
+            self.simulation_tab.update_financial_data(ticker, S, r, q, hist_vol)
             self.simulation_tab.update_company_name(company_name or ticker)
 
             self.smile_tab.update_financial_params(r, q)
@@ -169,7 +173,7 @@ class OptionPricingApp(QWidget):
             self.surface_tab.update_company_name(company_name or ticker)
 
             if hasattr(self, 'forecast_tab'):
-                self.forecast_tab.update_financial_params(ticker, S, r, q, sigma_to_use)
+                self.forecast_tab.update_financial_params(ticker, S, r, q)
                 self.forecast_tab.update_company_name(company_name or ticker)
 
             # Restauration de l'état du bouton après traitement

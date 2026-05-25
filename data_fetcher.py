@@ -380,7 +380,13 @@ class DataFetcher:
         closest_row = data.sort_values('abs_diff').iloc[0]
         
         iv = closest_row['impliedVolatility']
-        price = closest_row['lastPrice']
+        
+        bid = float(closest_row.get('bid', 0) or 0)
+        ask = float(closest_row.get('ask', 0) or 0)
+        if bid > 0 and ask > 0:
+            price = (bid + ask) / 2.0
+        else:
+            price = closest_row.get('lastPrice')
         
         # une IV nulle ou négative n'est pas exploitable pour le pricing
         if iv is None or iv <= 0.001 or price is None or price <= 0:
