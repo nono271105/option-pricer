@@ -1,282 +1,389 @@
-import React, { useMemo } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
-  ReferenceLine,
-  BarChart,
-  Bar,
-  AreaChart,
-  Area,
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  ResponsiveContainer, ReferenceLine, BarChart, Bar,
+  AreaChart, Area,
 } from 'recharts';
+import { useMarket } from '../App';
 
-const NUM_PATHS = 20;
-const NUM_STEPS = 50;
+// ── Types ────────────────────────────────────────────────────────────────
 
-function generateMonteCarloPaths() {
-  const paths: number[][] = [];
-  for (let p = 0; p < NUM_PATHS; p++) {
-    let spot = 254.23;
-    const path = [spot];
-    for (let i = 1; i <= NUM_STEPS; i++) {
-      const change = (Math.random() - 0.48) * 20;
-      spot += change;
-      path.push(spot);
-    }
-    paths.push(path);
-  }
+type ExoticType =
+  | 'barrier_analytical' | 'barrier_mc'
+  | 'asian_mc' | 'lookback_mc'
+  | 'digital_analytical' | 'digital_mc';
 
-  const data = [];
-  for (let i = 0; i <= NUM_STEPS; i++) {
-    const pt: any = { step: i };
-    paths.forEach((p, idx) => {
-      pt[`path_${idx}`] = p[i];
-    });
-    // Average
-    pt.avg = paths.reduce((s, p) => s + p[i], 0) / paths.length;
-    data.push(pt);
-  }
-  return data;
+type BarrierType = 'down-and-out' | 'down-and-in' | 'up-and-out' | 'up-and-in';
+
+interface PathPoint { step: number; [key: string]: number | null; }
+interface DistPoint { bucket: number; count: number; }
+interface PayoffPoint { spot: number; payoff: number; }
+
+interface ExoticState {
+  price: number | null;
+  method: string | null;
+  std_error: number | null;
+  ci_95: [number, number] | null;
+  price_paths: PathPoint[];
+  payoff_distribution: DistPoint[];
+  payoff_profile: PayoffPoint[];
+  S: number | null;
+  K: number | null;
+  loading: boolean;
+  error: string | null;
 }
 
-const DIST_DATA = [
-  { bucket: '18', count: 12 },
-  { bucket: '19', count: 22 },
-  { bucket: '20', count: 38 },
-  { bucket: '21', count: 55 },
-  { bucket: '22', count: 42 },
-  { bucket: '23', count: 28 },
-  { bucket: '24', count: 18 },
-  { bucket: '25', count: 10 },
-  { bucket: '26', count: 5 },
-  { bucket: '27', count: 3 },
-  { bucket: '28', count: 1 },
-];
-
-const PAYOFF_PROFILE = Array.from({ length: 60 }, (_, i) => {
-  const s = 150 + i * 4;
-  const k = 280;
-  const payoff = Math.max(0, k - s); // put payoff (digital example)
-  return { spot: s, payoff: payoff > 0 ? 28 : 0 };
-});
+// ── Composant principal ───────────────────────────────────────────────────
 
 export function ExoticsTab() {
-  const pathData = useMemo(() => generateMonteCarloPaths(), []);
+  const market = useMarket();
+  const tickerRef     = useRef<HTMLInputElement>(null);
+  const exoticTypeRef = useRef<HTMLSelectElement>(null);
+  const optTypeRef    = useRef<HTMLSelectElement>(null);
+  const strikeRef     = useRef<HTMLInputElement>(null);
+  const maturityRef   = useRef<HTMLInputElement>(null);
+  const sigmaRef      = useRef<HTMLInputElement>(null);
+  const barrierRef    = useRef<HTMLInputElement>(null);
+  const barrierTypeRef = useRef<HTMLSelectElement>(null);
+  const avgRef        = useRef<HTMLSelectElement>(null);
+  const payoffAmtRef  = useRef<HTMLInputElement>(null);
+  const nSimsRef      = useRef<HTMLInputElement>(null);
+  const nStepsRef     = useRef<HTMLInputElement>(null);
+
+  const [state, setState] = useState<ExoticState>({
+    price: null, method: null, std_error: null, ci_95: null,
+    price_paths: [], payoff_distribution: [], payoff_profile: [],
+    S: null, K: null, loading: false, error: null,
+  });
+
+  const [exoticType, setExoticType] = useState<ExoticType>('digital_analytical');
+  const showBarrier = exoticType.startsWith('barrier');
+  const showAveraging = exoticType === 'asian_mc';
+  const showPayoffAmt = exoticType.includes('digital');
+  const isMC = exoticType.endsWith('_mc');
+
+  const handleFetchData = async () => {
+    const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
+    setState(s => ({ ...s, loading: true, error: null }));
+    await market.fetchMarket(ticker);
+    setState(s => ({ ...s, loading: false }));
+  };
+
+  const handleCalculate = useCallback(async () => {
+    setState(s => ({ ...s, loading: true, error: null }));
+    try {
+      const S = market.S ?? 100;
+      const K = parseFloat(strikeRef.current?.value || String(Math.round(S)));
+      const sigma = parseFloat(sigmaRef.current?.value || '20') / 100;
+      const matStr = maturityRef.current?.value || '';
+      const T_days = matStr ? computeDaysFromDate(matStr) : 90;
+      const optType = optTypeRef.current?.value || 'call';
+      const barrierVal = showBarrier ? parseFloat(barrierRef.current?.value || '0') : null;
+      const barrierType = (barrierTypeRef.current?.value || 'down-and-out') as BarrierType;
+      const averaging = avgRef.current?.value || 'arithmetic';
+      const payoffAmt = parseFloat(payoffAmtRef.current?.value || '1');
+      const nSims = parseInt(nSimsRef.current?.value || '50000');
+      const nSteps = parseInt(nStepsRef.current?.value || '252');
+
+      if (!window.eel) {
+        setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
+        return;
+      }
+
+      const res = await window.eel.price_exotic(
+        exoticType, S, K, T_days, market.r, sigma, market.q, optType,
+        barrierVal, barrierType, averaging, payoffAmt, nSims, nSteps, 42
+      )();
+
+      if (res.error) {
+        setState(s => ({ ...s, loading: false, error: res.error }));
+        return;
+      }
+
+      // Transform price_paths for chart: [{step, path_0, ..., avg}]
+      let pathData: PathPoint[] = [];
+      if (res.price_paths) {
+        const n = res.price_paths[0]?.length || 0;
+        for (let i = 0; i < n; i++) {
+          const pt: PathPoint = { step: i };
+          let sum = 0;
+          res.price_paths.forEach((p, idx) => {
+            pt[`path_${idx}`] = p[i] ?? null;
+            sum += p[i] ?? 0;
+          });
+          pt['avg'] = sum / (res.price_paths.length || 1);
+          pathData.push(pt);
+        }
+      }
+
+      // Payoff profile
+      const profileData: PayoffPoint[] = (res.payoff_distribution ?? []).map(d => ({
+        spot: d.bucket,
+        payoff: d.count,
+      }));
+
+      setState(s => ({
+        ...s, loading: false, error: null,
+        price: res.price,
+        method: res.method,
+        std_error: res.std_error,
+        ci_95: res.ci_95,
+        price_paths: pathData,
+        payoff_distribution: res.payoff_distribution ?? [],
+        S: res.S,
+        K: res.K,
+      }));
+    } catch (e: any) {
+      setState(s => ({ ...s, loading: false, error: String(e) }));
+    }
+  }, [market, exoticType, showBarrier]);
+
+  const numPaths = state.price_paths.length > 0 ? Object.keys(state.price_paths[0]).filter(k => k.startsWith('path_')).length : 0;
+  const defaultStrike = market.S ? Math.round(market.S) : 100;
+  const defaultSigma = (market.histVol * 100).toFixed(2);
+  const defaultBarrier = market.S ? Math.round(market.S * 0.85) : 85;
 
   return (
-    <div className="flex flex-col h-full gap-2 p-2 overflow-auto">
-      {/* Top row: Params + Données + Résultats */}
-      <div className="flex gap-2">
-        {/* PARAMÈTRES EXOTIQUES */}
-        <div className="border border-border flex-shrink-0 w-[420px] flex flex-col">
-          <div className="bg-panel-header px-3 py-1.5 text-[11px] uppercase tracking-wider text-[#FFFFFF] border-b border-border">
-            PARAMÈTRES EXOTIQUES
-          </div>
-          <div className="bg-[#000000] p-2 space-y-2">
-            <FormRow label="Ticker Symbole :" value="AAPL" />
-            <FormRow label="Type exotique :" value="Digitale / Binaire" isSelect options={['Barrière (Knock-In/Out)', 'Asiatique', 'Lookback', 'Digitale / Binaire']} />
-            <FormRow label="Type d'option :" value="put" isSelect options={['call', 'put']} />
-            <FormRow label="Prix d'exercice (K) :" value="280" />
-            <FormRow label="Date d'échéance :" value="19/03/2027" />
-            <FormRow label="Position :" value="long" isSelect options={['long', 'short']} />
-          </div>
+    <div className="flex flex-col h-full gap-1 p-1 overflow-auto bg-[#000000]">
 
-          <div className="border-t border-border">
-            <div className="bg-panel-header px-3 py-1.5 text-[11px] uppercase tracking-wider text-[#FFFFFF] border-b border-border">
-              Paramètres spécifiques
-            </div>
-            <div className="bg-[#000000] p-2 space-y-2">
-              <FormRow label="Montant payoff ($) :" value="28" />
-            </div>
-          </div>
+      {state.error && (
+        <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] rounded shrink-0">
+          ⚠ {state.error}
+        </div>
+      )}
 
-          <div className="border-t border-border">
-            <div className="bg-panel-header px-3 py-1.5 text-[11px] uppercase tracking-wider text-[#FFFFFF] border-b border-border">
-              Monte Carlo
-            </div>
-            <div className="bg-[#000000] p-2 space-y-2">
-              <FormRow label="Simulations :" value="50000" />
-              <FormRow label="Pas de temps :" value="252" />
-            </div>
-          </div>
+      {/* Top row */}
+      <div className="flex gap-1">
 
-          <div className="bg-card p-4 space-y-2 border-t border-border">
-            <button className="w-full bg-[#1E1E1E] border border-border text-[#D0D0D0] py-2 hover:border-[#4A90E2] hover:text-[#4A90E2] transition-colors text-[12px]">
-              Récupérer/Synchroniser les Données
-            </button>
-            <button className="w-full bg-[#4A90E2] text-[#000000] py-2 hover:bg-[#357ABD] transition-colors text-[12px] font-semibold">
-              Calculer (Analytique + Monte Carlo)
-            </button>
+        {/* PARAMÈTRES */}
+        <div className="border border-[#222222] flex-shrink-0 w-[420px] flex flex-col">
+          <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
+            <span className="font-bold text-white">▼ PARAMÈTRES EXOTIQUES</span>
+          </div>
+          <div className="bg-[#000000] p-1.5 space-y-1.5">
+            <FR label="Ticker">
+              <input ref={tickerRef} defaultValue={market.ticker} className={INP} />
+            </FR>
+            <FR label="Type exotique">
+              <select ref={exoticTypeRef} value={exoticType}
+                onChange={e => setExoticType(e.target.value as ExoticType)}
+                className={SEL}>
+                <option value="digital_analytical">Digitale (Analytique)</option>
+                <option value="digital_mc">Digitale (Monte Carlo)</option>
+                <option value="barrier_analytical">Barrière (Analytique)</option>
+                <option value="barrier_mc">Barrière (Monte Carlo)</option>
+                <option value="asian_mc">Asiatique (Monte Carlo)</option>
+                <option value="lookback_mc">Lookback (Monte Carlo)</option>
+              </select>
+            </FR>
+            <FR label="Type d'option">
+              <select ref={optTypeRef} defaultValue="call" className={SEL}>
+                <option value="call">call</option>
+                <option value="put">put</option>
+              </select>
+            </FR>
+            <FR label="Strike (K)">
+              <input ref={strikeRef} key={defaultStrike} defaultValue={defaultStrike}
+                type="number" step="0.5" className={INP} />
+            </FR>
+            <FR label="Date d'échéance">
+              <input ref={maturityRef} defaultValue={getDefaultMaturity()} type="date" className={INP} />
+            </FR>
+            <FR label="Volatilité σ (%)">
+              <input ref={sigmaRef} key={defaultSigma} defaultValue={defaultSigma}
+                type="number" step="0.01" className={INP} />
+            </FR>
+
+            {/* Barrière */}
+            {showBarrier && (
+              <>
+                <FR label="Niveau barrière (H)">
+                  <input ref={barrierRef} key={defaultBarrier} defaultValue={defaultBarrier}
+                    type="number" step="0.5" className={INP} />
+                </FR>
+                <FR label="Type barrière">
+                  <select ref={barrierTypeRef} defaultValue="down-and-out" className={SEL}>
+                    <option value="down-and-out">Down-and-Out</option>
+                    <option value="down-and-in">Down-and-In</option>
+                    <option value="up-and-out">Up-and-Out</option>
+                    <option value="up-and-in">Up-and-In</option>
+                  </select>
+                </FR>
+              </>
+            )}
+
+            {/* Asiatique */}
+            {showAveraging && (
+              <FR label="Moyenne">
+                <select ref={avgRef} defaultValue="arithmetic" className={SEL}>
+                  <option value="arithmetic">Arithmétique</option>
+                  <option value="geometric">Géométrique</option>
+                </select>
+              </FR>
+            )}
+
+            {/* Digital */}
+            {showPayoffAmt && (
+              <FR label="Montant payoff ($)">
+                <input ref={payoffAmtRef} defaultValue="1" type="number" step="0.1" className={INP} />
+              </FR>
+            )}
+
+            {/* Monte Carlo */}
+            {isMC && (
+              <>
+                <p className="text-[9px] text-[#4A90E2] font-bold uppercase tracking-widest pt-1">Monte Carlo</p>
+                <FR label="Simulations">
+                  <input ref={nSimsRef} defaultValue="50000" type="number" step="10000" className={INP} />
+                </FR>
+                <FR label="Pas de temps">
+                  <input ref={nStepsRef} defaultValue="252" type="number" step="1" className={INP} />
+                </FR>
+              </>
+            )}
+
+            <div className="pt-2 flex gap-1">
+              <button id="exotic-fetch-btn" onClick={handleFetchData} disabled={state.loading}
+                className="flex-1 bg-[#2A2A2A] border border-[#444444] text-white py-1 hover:bg-[#3A3A3A] text-[10px] rounded-sm disabled:opacity-50">
+                {state.loading ? '⏳...' : 'Récupérer Données'}
+              </button>
+              <button id="exotic-calc-btn" onClick={handleCalculate} disabled={state.loading}
+                className="flex-1 bg-[#4A90E2] text-white py-1 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
+                {state.loading ? '⏳ Calcul...' : 'Calculer'}
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Right: Données + Résultats */}
-        <div className="flex-1 flex flex-col gap-2">
+        {/* Droite: données + résultats */}
+        <div className="flex-1 flex flex-col gap-1">
+
           {/* DONNÉES MARCHÉ */}
-          <div className="border border-border">
-            <div className="bg-panel-header px-3 py-1.5 text-[11px] uppercase tracking-wider text-[#FFFFFF] border-b border-border">
-              DONNÉES MARCHÉ
+          <div className="border border-[#222222]">
+            <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
+              <span className="font-bold text-white">▼ DONNÉES MARCHÉ</span>
             </div>
-            <div className="bg-[#000000] p-2">
-              <DataRow label="Prix Actuel (S) :" value="254.23" />
-              <DataRow label="Taux Sans Risque SOFR (r) :" value="3.70%" />
-              <DataRow label="Rendement Dividende (q) :" value="0.41%" />
-              <DataRow label="Volatilité Utilisée (σ) :" value="24.39% (IV Marché)" highlight />
-            </div>
-          </div>
-
-          {/* RÉSULTATS PRICING */}
-          <div className="border border-border">
-            <div className="bg-panel-header px-3 py-1.5 text-[11px] uppercase tracking-wider text-[#FFFFFF] border-b border-border">
-              RÉSULTATS PRICING
-            </div>
-            <div className="bg-[#000000] p-2">
-              <DataRow label="Prix Analytique :" value="$17.5075" highlight />
-              <DataRow label="Prix Monte Carlo :" value="$17.5425" />
-              <DataRow label="Std Error MC :" value="±0.0575" />
-              <DataRow label="Écart Ana. / MC :" value="$0.0350 (0.20%)" />
+            <div className="bg-[#000000] p-1.5 grid grid-cols-2 gap-x-4 gap-y-1">
+              <DR label="Prix Actuel (S)" value={market.S ? `${market.S.toFixed(2)} $` : 'N/C'} />
+              <DR label="Taux SOFR (r)"   value={`${(market.r * 100).toFixed(2)}%`} />
+              <DR label="Dividende (q)"   value={`${(market.q * 100).toFixed(2)}%`} />
+              <DR label="Vol. Hist. (σ₀)" value={`${(market.histVol * 100).toFixed(2)}%`} />
             </div>
           </div>
 
-          {/* Visualisation Monte Carlo (Moved up) */}
-          <div className="border border-border flex flex-col flex-1 min-h-[250px]">
-            <div className="bg-[#2D2D2D] px-3 py-1 text-[10px] text-[#888888] border-b border-border flex justify-between">
-              <span>Analyse Options Exotiques — Trajectoires GBM</span>
-              <div className="flex gap-3">
-                <div className="flex items-center gap-1"><div className="w-2.5 h-[2px] bg-[#FFCC00]" /><span>Moyenne</span></div>
-                <div className="flex items-center gap-1"><div className="w-2.5 h-[2px] bg-[#FF4444] border-t border-dashed" /><span>S₀</span></div>
-                <div className="flex items-center gap-1"><div className="w-2.5 h-[2px] bg-[#888888]" style={{ borderTop: '1px dotted #888888' }} /><span>K</span></div>
+          {/* RÉSULTATS */}
+          <div className="border border-[#222222]">
+            <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
+              <span className="font-bold text-white">▼ RÉSULTATS PRICING</span>
+            </div>
+            <div className="bg-[#000000] p-1.5 space-y-1">
+              <DR label="Prix" value={state.price !== null ? `${state.price.toFixed(4)} $` : 'N/C'} highlight={state.price !== null} />
+              <DR label="Méthode" value={state.method ?? 'N/C'} />
+              {state.std_error !== null && (
+                <DR label="Std Error MC" value={`±${state.std_error.toFixed(4)}`} />
+              )}
+              {state.ci_95 && (
+                <DR label="IC 95%" value={`[${state.ci_95[0].toFixed(4)}, ${state.ci_95[1].toFixed(4)}]`} />
+              )}
+            </div>
+          </div>
+
+          {/* Monte Carlo paths */}
+          {state.price_paths.length > 0 && (
+            <div className="border border-[#222222] flex flex-col flex-1 min-h-[180px]">
+              <div className="flex items-center justify-between px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
+                <span className="font-bold text-white">▼ TRAJECTOIRES GBM</span>
+                <div className="flex gap-3 text-[9px] text-[#888888]">
+                  <span className="flex items-center gap-1"><span className="text-[#FFCC00]">—</span> Moyenne</span>
+                  <span className="flex items-center gap-1"><span className="text-[#4A90E2]">—</span> Paths</span>
+                </div>
+              </div>
+              <div className="flex-1 bg-[#0A0A0A] p-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={state.price_paths} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <CartesianGrid stroke="#1A1A1A" vertical={false} />
+                    <XAxis dataKey="step" stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }} />
+                    <YAxis stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }} domain={['auto', 'auto']} />
+                    {state.S && <ReferenceLine y={state.S} stroke="#FF4444" strokeDasharray="4 4" />}
+                    {state.K && <ReferenceLine y={state.K} stroke="#888888" strokeDasharray="2 4" />}
+                    {Array.from({ length: numPaths }).map((_, i) => (
+                      <Line key={i} type="monotone" dataKey={`path_${i}`}
+                        stroke="#4A90E2" strokeOpacity={0.15} strokeWidth={1}
+                        dot={false} isAnimationActive={false} />
+                    ))}
+                    <Line type="monotone" dataKey="avg" stroke="#FFCC00" strokeWidth={2}
+                      dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </div>
-            <div className="flex-1 bg-card p-2 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={pathData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
-                  <CartesianGrid stroke="#333333" vertical={false} />
-                  <XAxis
-                    dataKey="step"
-                    stroke="#333333"
-                    tick={{ fill: '#888888', fontSize: 9 }}
-                    label={{ value: 'Jours', position: 'insideBottom', offset: -12, fill: '#888888', fontSize: 10 }}
-                  />
-                  <YAxis
-                    domain={['auto', 'auto']}
-                    stroke="#333333"
-                    tick={{ fill: '#888888', fontSize: 9 }}
-                  />
-                  <ReferenceLine y={254.23} stroke="#FF4444" strokeDasharray="4 4" />
-                  <ReferenceLine y={280} stroke="#888888" strokeDasharray="2 4" />
-                  {Array.from({ length: NUM_PATHS }).map((_, i) => (
-                    <Line
-                      key={i}
-                      type="monotone"
-                      dataKey={`path_${i}`}
-                      stroke="#4A90E2"
-                      strokeOpacity={0.15}
-                      strokeWidth={1}
-                      dot={false}
-                      isAnimationActive={false}
-                    />
-                  ))}
-                  <Line type="monotone" dataKey="avg" stroke="#FFCC00" strokeWidth={2} dot={false} isAnimationActive={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
-
-        <div className="flex gap-2 flex-1 min-h-[200px]">
-          {/* Distribution payoffs */}
-          <div className="flex-1 border border-border flex flex-col">
-            <div className="bg-[#2D2D2D] px-3 py-1 text-[10px] text-[#FFFFFF] border-b border-border">
-              Distribution payoffs — 65.0% ITM
+      {/* Bottom: Distribution payoffs */}
+      {state.payoff_distribution.length > 0 && (
+        <div className="flex gap-1 flex-1 min-h-[180px]">
+          <div className="flex-1 border border-[#222222] flex flex-col">
+            <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
+              <span className="font-bold text-white">▼ DISTRIBUTION DES PAYOFFS</span>
             </div>
-            <div className="flex-1 bg-card p-2">
+            <div className="flex-1 bg-[#0A0A0A] p-1">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={DIST_DATA} margin={{ top: 10, right: 0, left: 0, bottom: 20 }}>
-                  <CartesianGrid stroke="#333333" vertical={false} />
-                  <XAxis
-                    dataKey="bucket"
-                    stroke="#333333"
-                    tick={{ fill: '#888888', fontSize: 9 }}
-                    label={{ value: 'Payoff ($)', position: 'insideBottom', offset: -12, fill: '#888888', fontSize: 10 }}
-                  />
-                  <YAxis stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }} label={{ value: 'Densité', angle: -90, position: 'insideLeft', offset: 10, fill: '#888888', fontSize: 10 }} />
-                  <Bar dataKey="count" fill="#4A90E2" opacity={0.5} />
-                  <ReferenceLine x="21" stroke="#FFCC00" strokeDasharray="3 3" label={{ value: 'Moyenne = 18.206', fill: '#FFCC00', fontSize: 9, position: 'insideBottomRight' }} />
+                <BarChart data={state.payoff_distribution} margin={{ top: 5, right: 5, left: -20, bottom: 15 }}>
+                  <CartesianGrid stroke="#1A1A1A" vertical={false} />
+                  <XAxis dataKey="bucket" stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }}
+                    label={{ value: 'Payoff ($)', position: 'insideBottom', offset: -10, fill: '#888888', fontSize: 9 }} />
+                  <YAxis stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }} />
+                  <Bar dataKey="count" fill="#4A90E2" opacity={0.6} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
-
-          {/* Profil de payoff à maturité */}
-          <div className="flex-1 border border-border flex flex-col">
-            <div className="bg-[#2D2D2D] px-3 py-1 text-[10px] text-[#FFFFFF] border-b border-border">
-              Profil de payoff à maturité
-            </div>
-            <div className="flex-1 bg-card p-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={PAYOFF_PROFILE} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
-                  <defs>
-                    <linearGradient id="exoticPayoff" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#4A90E2" stopOpacity={0.15} />
-                      <stop offset="100%" stopColor="#4A90E2" stopOpacity={0.01} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="#333333" vertical={false} />
-                  <XAxis
-                    dataKey="spot"
-                    stroke="#333333"
-                    tick={{ fill: '#888888', fontSize: 9 }}
-                    type="number"
-                    domain={['dataMin', 'dataMax']}
-                    label={{ value: 'Prix sous-jacent ($)', position: 'insideBottom', offset: -12, fill: '#888888', fontSize: 10 }}
-                  />
-                  <YAxis stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }} label={{ value: 'Payoff ($)', angle: -90, position: 'insideLeft', offset: 10, fill: '#888888', fontSize: 10 }} />
-                  <ReferenceLine x={280} stroke="#FF4444" strokeDasharray="3 3" label={{ value: 'K = 280.00', fill: '#FF4444', fontSize: 9, position: 'top' }} />
-                  <ReferenceLine x={254.23} stroke="#FF4444" strokeDasharray="3 3" label={{ value: 'S₀ = 254.23', fill: '#FFCC00', fontSize: 9, position: 'top' }} />
-                  <Area type="stepAfter" dataKey="payoff" stroke="#4A90E2" strokeWidth={1.5} fill="url(#exoticPayoff)" isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
         </div>
-      </div>
-  );
-}
+      )}
 
-/* ── Helpers ── */
-function FormRow({ label, value, isSelect, options }: { label: string; value: string; isSelect?: boolean; options?: string[] }) {
-  return (
-    <div className="flex flex-col gap-1 border-b border-border pb-1">
-      <span className="text-[9px] text-[#888888] uppercase text-center tracking-wider">{label.replace(' :', '')}</span>
-      {isSelect ? (
-        <select
-          defaultValue={value}
-          className="w-full bg-[#000000] border border-border text-[#FFFFFF] py-1 px-2 text-[12px] text-center focus:border-[#4A90E2] outline-none appearance-none cursor-pointer"
-        >
-          {options?.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-      ) : (
-        <input
-          type="text"
-          defaultValue={value}
-          className="w-full bg-[#000000] border border-border text-[#FFFFFF] py-1 px-2 text-[12px] text-center focus:border-[#4A90E2] outline-none"
-        />
+      {/* État vide */}
+      {state.price === null && !state.loading && !state.error && (
+        <div className="flex-1 flex items-center justify-center text-[#888888] text-[12px]">
+          Configurez les paramètres et cliquez sur "Calculer"
+        </div>
       )}
     </div>
   );
 }
 
-function DataRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+const INP = "w-[120px] bg-[#121212] border border-[#333333] text-[#FFFFFF] py-0.5 px-1 text-[11px] text-right outline-none";
+const SEL = "w-[120px] bg-[#121212] border border-[#333333] text-[#FFFFFF] py-0.5 px-1 text-[11px] text-right outline-none appearance-none cursor-pointer";
+
+function FR({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-0.5 border-b border-border py-1.5">
-      <span className="text-[9px] text-[#888888] uppercase tracking-wider text-center">{label.replace(' :', '')}</span>
-      <span className={`text-[12px] font-bold text-center ${highlight ? 'text-[#4A90E2]' : 'text-[#FFFFFF]'}`}>{value}</span>
+    <div className="flex items-center justify-between gap-2 border-b border-[#222222] pb-1">
+      <span className="text-[10px] text-[#888888]">{label}</span>
+      {children}
     </div>
   );
+}
+
+function DR({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-[#1A1A1A] pb-1">
+      <span className="text-[10px] text-[#888888]">{label}</span>
+      <span className={`text-[11px] font-bold ${highlight ? 'text-[#4A90E2]' : 'text-[#FFFFFF]'}`}>{value}</span>
+    </div>
+  );
+}
+
+function computeDaysFromDate(dateStr: string): number {
+  const today = new Date();
+  const target = new Date(dateStr);
+  return Math.max(Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)), 1);
+}
+
+function getDefaultMaturity(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 90);
+  return d.toISOString().split('T')[0];
 }

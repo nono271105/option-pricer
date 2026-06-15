@@ -1,3 +1,6 @@
+# Interface web (Eel : pont Python ↔ React)
+eel==0.16.0
+
 # IA & Séries temporelles
 timesfm @ git+https://github.com/google-research/timesfm.git@d720daa6786539c2566a44464fbda1019c0a82c0
 torch==2.12.0
@@ -9,8 +12,7 @@ numpy==2.4.4
 scipy==1.17.1
 yfinance==1.3.0
 
-# Interface & Visualisation
-PySide6==6.11.1
+# Visualisation (gardé pour compatibilité si besoin)
 matplotlib==3.10.9
 plotly==6.7.0
 
