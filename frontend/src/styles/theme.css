@@ -1,0 +1,115 @@
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-size: 11px; /* TWS uses smaller fonts */
+
+  /* TWS palette */
+  --background: #000000;
+  --foreground: #D4D4D4;
+  --card: #181A1F;
+  --card-foreground: #D4D4D4;
+  --popover: #181A1F;
+  --popover-foreground: #D4D4D4;
+
+  --primary: #FFFFFF;
+  --primary-foreground: #000000;
+  --secondary: #2C2C2C;
+  --secondary-foreground: #E0E0E0;
+
+  --muted: #1E1E1E;
+  --muted-foreground: #888888;
+  --accent: #2C3545;
+  --accent-foreground: #FFFFFF;
+
+  --destructive: #FF4444;
+  --destructive-foreground: #FFFFFF;
+
+  --border: #333333;
+  --input: #121212;
+  --input-background: #121212;
+  --ring: #4A90E2;
+
+  --radius: 2px;
+
+  --color-positive: #00FF00; /* TWS Bright Green */
+  --color-negative: #FF3333; /* TWS Bright Red */
+  --color-neutral: #CCCCCC;
+
+  /* Panel header background - typical TWS dark gradient simulation */
+  --panel-header: #1C1F26;
+  --panel-header-accent: #282C35;
+  
+  /* Option Chain specific colors */
+  --tws-blue-bg: #1A3052;
+  --tws-red-bg: #4A1515;
+  --tws-strike-bg: #2B579A;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-ring: var(--ring);
+
+  --color-positive: var(--color-positive);
+  --color-negative: var(--color-negative);
+  --color-neutral: var(--color-neutral);
+
+  --color-panel-header: var(--panel-header);
+  --color-panel-header-accent: var(--panel-header-accent);
+  
+  --color-tws-blue-bg: var(--tws-blue-bg);
+  --color-tws-red-bg: var(--tws-red-bg);
+  --color-tws-strike-bg: var(--tws-strike-bg);
+
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: "Bloomberg", "Bloomberg Fixed", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-data: "Bloomberg", "Bloomberg Fixed", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased text-[11px];
+  }
+
+  /* Custom scrollbar for the terminal aesthetic */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #000000;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #333333;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #444444;
+  }
+}
