@@ -103,7 +103,7 @@ export function OptionChainTab() {
       {/* Toolbar */}
       <div className="flex items-center justify-between px-2 py-1 bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#333333] text-[10px] shrink-0">
         <div className="flex items-center gap-3">
-          <span className="font-bold text-white">▼ OPTION CHAIN</span>
+          <span className="font-bold text-white"> OPTION CHAIN</span>
           {state.expiry_used && (
             <span className="text-[#FFCC00]">Échéance : {state.expiry_used}</span>
           )}
@@ -135,7 +135,7 @@ export function OptionChainTab() {
           )}
           <button id="chain-fetch-btn" onClick={handleFetch} disabled={state.loading}
             className="bg-[#4A90E2] text-white px-3 py-0.5 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
-            {state.loading ? '⏳ Chargement...' : '↻ Charger Chain'}
+            {state.loading ? 'Chargement...' : 'Charger Chaîne'}
           </button>
         </div>
       </div>
@@ -143,7 +143,7 @@ export function OptionChainTab() {
       {/* Erreur */}
       {state.error && (
         <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] mx-2 mt-1 rounded shrink-0">
-          ⚠ {state.error}
+          Warning {state.error}
         </div>
       )}
 
@@ -206,12 +206,12 @@ export function OptionChainTab() {
                 >
                   {/* Call Row */}
                   <div className={`flex text-[11px] divide-x divide-[#1A1A1A] ${callBg}`}>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#00CC66] font-medium">{call ? call.bid.toFixed(2) : '—'}</div>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#FF4444] font-medium">{call ? call.ask.toFixed(2) : '—'}</div>
-                    <div className={`flex-1 text-right px-1 py-0.5 ${callItm ? 'text-[#FFCC00]' : 'text-[#888888]'}`}>{call ? call.iv.toFixed(2) : '—'}</div>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#888888]">{call ? (call.volume >= 1000 ? (call.volume / 1000).toFixed(0) + 'k' : call.volume) : '—'}</div>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#666666]">{call ? (call.oi >= 1000 ? (call.oi / 1000).toFixed(0) + 'k' : call.oi) : '—'}</div>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#D4D4D4]">{call?.delta !== null && call?.delta !== undefined ? call.delta.toFixed(3) : '—'}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#00CC66] font-medium">{call ? call.bid.toFixed(2) : ''}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#FF4444] font-medium">{call ? call.ask.toFixed(2) : ''}</div>
+                    <div className={`flex-1 text-right px-1 py-0.5 ${callItm ? 'text-[#FFCC00]' : 'text-[#888888]'}`}>{call ? call.iv.toFixed(2) : ''}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#888888]">{call ? (call.volume >= 1000 ? (call.volume / 1000).toFixed(0) + 'k' : call.volume) : ''}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#666666]">{call ? (call.oi >= 1000 ? (call.oi / 1000).toFixed(0) + 'k' : call.oi) : ''}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#D4D4D4]">{call?.delta !== null && call?.delta !== undefined ? call.delta.toFixed(3) : ''}</div>
                   </div>
 
                   {/* Strike */}
@@ -221,12 +221,12 @@ export function OptionChainTab() {
 
                   {/* Put Row */}
                   <div className={`flex text-[11px] divide-x divide-[#1A1A1A] ${putBg}`}>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#00CC66] font-medium">{put ? put.bid.toFixed(2) : '—'}</div>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#FF4444] font-medium">{put ? put.ask.toFixed(2) : '—'}</div>
-                    <div className={`flex-1 text-right px-1 py-0.5 ${putItm ? 'text-[#FFCC00]' : 'text-[#888888]'}`}>{put ? put.iv.toFixed(2) : '—'}</div>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#888888]">{put ? (put.volume >= 1000 ? (put.volume / 1000).toFixed(0) + 'k' : put.volume) : '—'}</div>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#666666]">{put ? (put.oi >= 1000 ? (put.oi / 1000).toFixed(0) + 'k' : put.oi) : '—'}</div>
-                    <div className="flex-1 text-right px-1 py-0.5 text-[#D4D4D4]">{put?.delta !== null && put?.delta !== undefined ? put.delta.toFixed(3) : '—'}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#00CC66] font-medium">{put ? put.bid.toFixed(2) : ''}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#FF4444] font-medium">{put ? put.ask.toFixed(2) : ''}</div>
+                    <div className={`flex-1 text-right px-1 py-0.5 ${putItm ? 'text-[#FFCC00]' : 'text-[#888888]'}`}>{put ? put.iv.toFixed(2) : ''}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#888888]">{put ? (put.volume >= 1000 ? (put.volume / 1000).toFixed(0) + 'k' : put.volume) : ''}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#666666]">{put ? (put.oi >= 1000 ? (put.oi / 1000).toFixed(0) + 'k' : put.oi) : ''}</div>
+                    <div className="flex-1 text-right px-1 py-0.5 text-[#D4D4D4]">{put?.delta !== null && put?.delta !== undefined ? put.delta.toFixed(3) : ''}</div>
                   </div>
                 </div>
               );

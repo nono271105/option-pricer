@@ -125,11 +125,11 @@ export default function App() {
           {/* Top Header Row */}
           <div className="flex items-center justify-between px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#333333]">
             <div className="flex items-center gap-4">
-              <span className="font-bold text-white">▼ Quote Panel</span>
+              <span className="font-bold text-white"> Quote Panel</span>
             </div>
             <div className="flex items-center gap-2">
               {market.isLoading && (
-                <span className="text-[#FFCC00] animate-pulse">⏳ Chargement...</span>
+                <span className="text-[#FFCC00] animate-pulse">Chargement...</span>
               )}
               {market.error && (
                 <span className="text-[#FF4444] text-[9px]">{market.error}</span>
@@ -160,7 +160,7 @@ export default function App() {
                   disabled={market.isLoading}
                   className="bg-[#2A2A2A] border border-[#444444] text-white px-2 py-0.5 text-[9px] hover:bg-[#3A3A3A] disabled:opacity-50 transition-colors rounded-sm"
                 >
-                  {market.isLoading ? '⏳' : '↻'}
+                  {market.isLoading ? 'Chargement...' : 'Actualiser'}
                 </button>
               </div>
               {market.companyName && (
@@ -231,15 +231,15 @@ export default function App() {
 
           {/* Tab Content */}
           <div className="flex-1 overflow-hidden">
-            {activeTab === 'chains'     && <OptionChainTab />}
-            {activeTab === 'bsm'        && <BsmTab />}
-            {activeTab === 'crr'        && <CrrTab />}
-            {activeTab === 'simulation' && <SimulationTab />}
-            {activeTab === 'smile'      && <SmileTab />}
-            {activeTab === 'surface'    && <SurfaceTab />}
-            {activeTab === 'exotics'    && <ExoticsTab />}
-            {activeTab === 'strategies' && <StrategiesTab />}
-            {activeTab === 'forecast'   && <ForecastTab />}
+            <div className={activeTab === 'chains' ? 'block h-full' : 'hidden'}><OptionChainTab /></div>
+            <div className={activeTab === 'bsm' ? 'block h-full' : 'hidden'}><BsmTab /></div>
+            <div className={activeTab === 'crr' ? 'block h-full' : 'hidden'}><CrrTab /></div>
+            <div className={activeTab === 'simulation' ? 'block h-full' : 'hidden'}><SimulationTab /></div>
+            <div className={activeTab === 'smile' ? 'block h-full' : 'hidden'}><SmileTab /></div>
+            <div className={activeTab === 'surface' ? 'block h-full' : 'hidden'}><SurfaceTab /></div>
+            <div className={activeTab === 'exotics' ? 'block h-full' : 'hidden'}><ExoticsTab /></div>
+            <div className={activeTab === 'strategies' ? 'block h-full' : 'hidden'}><StrategiesTab /></div>
+            <div className={activeTab === 'forecast' ? 'block h-full' : 'hidden'}><ForecastTab /></div>
           </div>
         </div>
 

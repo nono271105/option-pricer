@@ -1,8 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  ResponsiveContainer, ReferenceLine, Tooltip,
-} from 'recharts';
+import Plot from 'react-plotly.js';
 import { useMarket } from '../App';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -29,6 +26,8 @@ interface StrategyState {
     max_loss: number | null;
   } | null;
   greeks: { delta: number; gamma: number; theta: number; vega: number; rho: number; } | null;
+  sigma?: number;
+  sigma_source?: string;
   loading: boolean;
   error: string | null;
 }
@@ -61,7 +60,7 @@ const STRATEGY_FAMILIES: Record<string, string[]> = {
 export function StrategiesTab() {
   const market = useMarket();
   const tickerRef   = useRef<HTMLInputElement>(null);
-  const sigmaRef    = useRef<HTMLInputElement>(null);
+
   const maturityRef = useRef<HTMLInputElement>(null);
 
   const [family, setFamily]     = useState('Spreads directionnels');
@@ -91,7 +90,6 @@ export function StrategiesTab() {
     try {
       const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
       const S = market.S ?? 100;
-      const sigma = parseFloat(sigmaRef.current?.value || '20') / 100;
       const matStr = maturityRef.current?.value || '';
       const T_days = matStr ? computeDaysFromDate(matStr) : 90;
       const expiry = matStr || getDefaultMaturity();
@@ -102,7 +100,7 @@ export function StrategiesTab() {
       }
 
       const res = await window.eel.calculate_strategy(
-        strategy, ticker, S, T_days, market.r, sigma, market.q, expiry
+        strategy, ticker, S, T_days, market.r, market.q, expiry
       )();
 
       if (res.error) {
@@ -118,39 +116,36 @@ export function StrategiesTab() {
         value_today_data: res.value_today_data,
         metrics: res.metrics,
         greeks: res.greeks,
+        sigma: res.sigma,
+        sigma_source: res.sigma_source,
       }));
     } catch (e: any) {
       setState(s => ({ ...s, loading: false, error: String(e) }));
     }
   };
 
-  const defaultSigma = (market.histVol * 100).toFixed(2);
+  const currentSigma = state.sigma ? (state.sigma * 100).toFixed(2) : 'N/A';
 
   return (
     <div className="flex flex-col h-full gap-1 p-1 overflow-auto bg-[#000000]">
 
       {state.error && (
         <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] rounded shrink-0">
-          ⚠ {state.error}
+          Warning {state.error}
         </div>
       )}
 
       {/* Sélecteur de stratégie */}
       <div className="border border-[#222222] shrink-0">
         <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222] justify-between flex-wrap gap-2">
-          <span className="font-bold text-white">▼ STRATÉGIES — Construction et Analyse</span>
+          <span className="font-bold text-white"> STRATÉGIES  Construction et Analyse</span>
           <div className="flex items-center gap-2 flex-wrap">
             <label className="text-[#888888] flex items-center gap-1">
               Ticker :
               <input ref={tickerRef} defaultValue={market.ticker}
                 className="bg-[#121212] border border-[#333333] text-white px-1.5 py-0.5 text-[11px] w-[80px] outline-none ml-1" />
             </label>
-            <label className="text-[#888888] flex items-center gap-1">
-              σ (%) :
-              <input ref={sigmaRef} key={defaultSigma} defaultValue={defaultSigma}
-                type="number" step="0.01"
-                className="bg-[#121212] border border-[#333333] text-white px-1.5 py-0.5 text-[11px] w-[70px] outline-none ml-1" />
-            </label>
+
             <label className="text-[#888888] flex items-center gap-1">
               Maturité :
               <input ref={maturityRef} defaultValue={getDefaultMaturity()} type="date"
@@ -173,7 +168,7 @@ export function StrategiesTab() {
             </label>
             <button id="strategy-analyze-btn" onClick={handleAnalyze} disabled={state.loading}
               className="bg-[#4A90E2] text-white px-3 py-0.5 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
-              {state.loading ? '⏳...' : 'Analyser'}
+              {state.loading ? 'Analyse...' : 'Analyser'}
             </button>
           </div>
         </div>
@@ -185,7 +180,7 @@ export function StrategiesTab() {
           {/* Legs table */}
           <div className="flex-1 border border-[#222222]">
             <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-              <span className="font-bold text-white">▼ LEGS — {state.strategy_name}</span>
+              <span className="font-bold text-white"> LEGS  {state.strategy_name}</span>
             </div>
             <div className="overflow-auto">
               <table className="w-full text-right border-collapse text-[11px]">
@@ -225,7 +220,7 @@ export function StrategiesTab() {
           {state.metrics && state.greeks && (
             <div className="w-[260px] border border-[#222222] flex flex-col">
               <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-                <span className="font-bold text-white">▼ MÉTRIQUES</span>
+                <span className="font-bold text-white"> MÉTRIQUES</span>
               </div>
               <div className="bg-[#000000] p-1.5 space-y-1">
                 <MR label="Coût total" value={state.metrics.cost !== null ? `${state.metrics.cost.toFixed(4)} $` : 'N/C'}
@@ -239,6 +234,10 @@ export function StrategiesTab() {
                 <MR label="Perte maximum"
                   value={state.metrics.max_loss !== null ? `${state.metrics.max_loss.toFixed(4)} $` : 'Illimitée'}
                   color="text-[#FF4444]" />
+                <div className="flex justify-between py-0.5 border-b border-[#222]">
+                  <span className="text-[#888] text-[10px]">Volatilité (σ) [{state.sigma_source || 'N/A'}] :</span>
+                  <span className="text-[#0F0] font-bold text-[11px]">{currentSigma !== 'N/A' ? `${currentSigma}%` : 'N/A'}</span>
+                </div>
 
                 <div className="border-t border-[#222222] pt-1 mt-1">
                   <p className="text-[9px] text-[#888888] uppercase tracking-widest mb-1">Grecs Agrégés</p>
@@ -263,46 +262,74 @@ export function StrategiesTab() {
       {state.payoff_data.length > 0 && (
         <div className="flex-1 border border-[#222222] flex flex-col min-h-[250px]">
           <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-            <span className="font-bold text-white">▼ PROFIL P&L — {state.strategy_name}</span>
+            <span className="font-bold text-white"> PROFIL P&L  {state.strategy_name}</span>
             <div className="ml-4 flex gap-4 text-[9px] text-[#888888]">
-              <span className="flex items-center gap-1"><span className="text-[#00FF00]">—</span> Payoff à maturité</span>
-              <span className="flex items-center gap-1"><span className="text-[#FFCC00]">—</span> Valeur aujourd'hui</span>
+              <span className="flex items-center gap-1"><span className="text-[#00FF00]"></span> Payoff à maturité</span>
+              <span className="flex items-center gap-1"><span className="text-[#FFCC00]"></span> Valeur aujourd'hui</span>
             </div>
           </div>
           <div className="flex-1 bg-[#0A0A0A] p-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                <defs>
-                  <linearGradient id="stratPos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#00FF00" stopOpacity={0.1} />
-                    <stop offset="100%" stopColor="#00FF00" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#1A1A1A" vertical={false} />
-                <XAxis dataKey="spot" type="number" domain={['dataMin', 'dataMax']}
-                  stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }}
-                  label={{ value: "Prix sous-jacent (S)", position: 'insideBottom', fill: '#888888', fontSize: 9, offset: -12 }} />
-                <YAxis stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} />
-                <Tooltip
-                  contentStyle={{ background: '#111', border: '1px solid #333', fontSize: 10 }}
-                  formatter={(v: any, name: string) => [`${Number(v).toFixed(4)} $`, name]}
-                  labelFormatter={(l: number) => `S = ${Number(l).toFixed(2)} $`}
-                />
-                <ReferenceLine y={0} stroke="#444444" />
-                {state.metrics?.breakevens.map((be, i) => (
-                  <ReferenceLine key={i} x={be} stroke="#D0D0D0" strokeDasharray="2 2"
-                    label={{ value: `BE=${be.toFixed(0)}`, fill: '#D0D0D0', fontSize: 9, position: 'top' }} />
-                ))}
-                {market.S && (
-                  <ReferenceLine x={market.S} stroke="#FF4444" strokeDasharray="3 3"
-                    label={{ value: `S=${market.S.toFixed(0)}`, fill: '#FF4444', fontSize: 9, position: 'top' }} />
-                )}
-                <Area data={state.payoff_data} type="linear" dataKey="payoff" name="Payoff maturité"
-                  stroke="#00FF00" strokeWidth={1.5} fill="url(#stratPos)" isAnimationActive={false} />
-                <Area data={state.value_today_data} type="monotone" dataKey="value" name="Valeur aujourd'hui"
-                  stroke="#FFCC00" strokeWidth={1.5} fill="none" isAnimationActive={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <Plot
+              data={[
+                {
+                  x: state.payoff_data.map(p => p.spot),
+                  y: state.payoff_data.map(p => p.payoff),
+                  type: 'scatter' as const,
+                  mode: 'lines' as const,
+                  line: { color: '#00FF00', width: 1.5 },
+                  fill: 'tozeroy',
+                  fillcolor: 'rgba(0, 255, 0, 0.1)',
+                  name: 'Payoff maturité'
+                },
+                {
+                  x: state.value_today_data.map(p => p.spot),
+                  y: state.value_today_data.map(p => p.value),
+                  type: 'scatter' as const,
+                  mode: 'lines' as const,
+                  line: { color: '#FFCC00', width: 1.5 },
+                  name: "Valeur aujourd'hui"
+                }
+              ]}
+              layout={{
+                autosize: true,
+                margin: { l: 40, r: 20, t: 10, b: 30 },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                xaxis: { title: { text: 'Prix sous-jacent (S)', font: { size: 9, color: '#888' } }, gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                yaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                hovermode: 'x unified',
+                shapes: [
+                  {
+                    type: 'line', xref: 'paper', x0: 0, x1: 1,
+                    y0: 0, y1: 0,
+                    line: { color: '#444444', width: 1 }
+                  },
+                  ...(state.metrics?.breakevens || []).map(be => ({
+                    type: 'line' as const, xref: 'x' as const, yref: 'paper' as const, x0: be, x1: be,
+                    y0: 0, y1: 1,
+                    line: { color: '#D0D0D0', dash: 'dash' as const, width: 1 }
+                  })),
+                  ...(market.S ? [{
+                    type: 'line' as const, xref: 'x' as const, yref: 'paper' as const, x0: market.S, x1: market.S,
+                    y0: 0, y1: 1,
+                    line: { color: '#FF4444', dash: 'dashdot' as const, width: 1 }
+                  }] : [])
+                ],
+                annotations: [
+                  ...(state.metrics?.breakevens || []).map(be => ({
+                    x: be, y: 1, xref: 'x' as const, yref: 'paper' as const,
+                    text: `BE=${be.toFixed(0)}`, showarrow: false, yanchor: 'bottom', font: { color: '#D0D0D0', size: 9 }
+                  })),
+                  ...(market.S ? [{
+                    x: market.S, y: 1, xref: 'x' as const, yref: 'paper' as const,
+                    text: `S=${market.S.toFixed(0)}`, showarrow: false, yanchor: 'bottom', font: { color: '#FF4444', size: 9 }
+                  }] : [])
+                ],
+                legend: { orientation: 'h', y: -0.2 }
+              }}
+              style={{ width: '100%', height: '100%' }}
+              useResizeHandler={true}
+            />
           </div>
         </div>
       )}

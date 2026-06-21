@@ -145,7 +145,13 @@ class ForecastLogic:
             inputs=[iv_input],
         )
 
-        return np.array(point_forecast), np.array(quantile_forecast), iv_history
+        # TimesFM retourne une liste de prévisions (une par input).
+        # On n'envoie qu'une seule série (inputs=[iv_input]), donc on extrait [0].
+        # np.array() sur la liste brute déclenche un warning "inhomogeneous shape"
+        # en NumPy 2.x — on extrait directement l'élément pour éviter ça.
+        pf = np.asarray(point_forecast[0], dtype=np.float32).flatten()
+        qf = np.asarray(quantile_forecast[0], dtype=np.float32) if quantile_forecast is not None else None
+        return pf, qf, iv_history
 
     def process_iv_forecast_results(
         self,
@@ -180,7 +186,8 @@ class ForecastLogic:
             Tuple : (iv_forecast, option_prices, deltas,
                      iv_hist_slice, hist_option_prices, hist_deltas, x_hist)
         """
-        iv_fc = iv_point_forecast[0]
+        # iv_point_forecast est déjà un array 1D (extrait de [0] dans run_iv_forecast)
+        iv_fc = np.asarray(iv_point_forecast, dtype=np.float32).flatten()
 
         # repricing sur l'horizon de prevision
         option_prices = []
@@ -202,7 +209,7 @@ class ForecastLogic:
 
         # tranche historique pour la continuite du trace
         n_hist_display = len(iv_history)
-        iv_hist_slice = iv_history[-n_hist_display:]
+        iv_hist_slice = np.array(iv_history[-n_hist_display:]).flatten()
         x_hist = np.arange(-n_hist_display, 0)
 
         # repricing historique avec les IV reelles

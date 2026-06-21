@@ -99,6 +99,17 @@ def _next_weekday_after(days_ahead: int) -> str:
     return d.strftime("%Y-%m-%d")
 
 
+def _parse_date(date_str: str, default_days: int = 90) -> datetime:
+    """Parse la date (YYYY-MM-DD ou DD/MM/YYYY). En cas d'échec, retourne j+default_days."""
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        try:
+            return datetime.strptime(date_str, "%d/%m/%Y")
+        except ValueError:
+            return datetime.strptime(_next_weekday_after(default_days), "%Y-%m-%d")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. DONNÉES DE MARCHÉ
 # ─────────────────────────────────────────────────────────────────────────────
@@ -181,10 +192,7 @@ def get_option_chain(ticker: str, expiry_str: str) -> Dict:
         }
     """
     ticker = ticker.strip().upper()
-    try:
-        maturity_dt = datetime.strptime(expiry_str, "%Y-%m-%d")
-    except Exception:
-        maturity_dt = datetime.strptime(_next_weekday_after(60), "%Y-%m-%d")
+    maturity_dt = _parse_date(expiry_str, 60)
 
     try:
         opt_chain, closest_date = _data_fetcher.get_option_data_chain(ticker, maturity_dt)
@@ -203,8 +211,10 @@ def get_option_chain(ticker: str, expiry_str: str) -> Dict:
                 bid = float(row.get("bid", 0) or 0)
                 ask = float(row.get("ask", 0) or 0)
                 iv_raw = float(row.get("impliedVolatility", 0) or 0)
-                vol_raw = int(row.get("volume", 0) or 0)
-                oi_raw = int(row.get("openInterest", 0) or 0)
+                v = row.get("volume", 0)
+                vol_raw = 0 if v is None or np.isnan(v) else int(v)
+                oi = row.get("openInterest", 0)
+                oi_raw = 0 if oi is None or np.isnan(oi) else int(oi)
 
                 # Calcul du delta BSM
                 sigma = iv_raw if iv_raw > 0.01 else 0.25
@@ -255,7 +265,7 @@ def get_available_expiries(ticker: str) -> Dict:
 
 @eel.expose
 def calculate_bsm(
-    S: float, K: float, T_days: float, r: float, sigma: float, q: float,
+    ticker: str, S: float, K: float, maturity_date: str, r: float, q: float,
     option_type: str, position: str
 ) -> Dict:
     """
@@ -274,8 +284,15 @@ def calculate_bsm(
         }
     """
     try:
-        T = max(float(T_days) / 365.0, 1e-6)
-        S, K, r, sigma, q = float(S), float(K), float(r), float(sigma), float(q)
+        mat_dt = _parse_date(maturity_date, 90)
+        
+        T_days = max((mat_dt.date() - date.today()).days, 1)
+        T = T_days / 365.0
+        S, K, r, q = float(S), float(K), float(r), float(q)
+        
+        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K, mat_dt, option_type)
+        sigma = iv if iv is not None else (_store.historical_vol or 0.20)
+        sigma_source = "IV" if iv is not None else "Historique"
 
         price = _option_models.black_scholes_price(S, K, T, r, sigma, q, option_type)
         price = round(float(price), 4)
@@ -303,8 +320,10 @@ def calculate_bsm(
 
         return {
             "price": price,
-            "greeks": greeks,
+            "sigma": sigma,
+            "sigma_source": sigma_source,
             "payoff_data": payoff_data,
+            "greeks": greeks,
             **greek_curves,
             "breakeven": breakeven,
             "S": S,
@@ -322,7 +341,7 @@ def calculate_bsm(
 
 @eel.expose
 def calculate_crr(
-    S: float, K: float, T_days: float, r: float, sigma: float, q: float,
+    ticker: str, S: float, K: float, maturity_date: str, r: float, q: float,
     N: int, option_type: str, position: str
 ) -> Dict:
     """
@@ -339,14 +358,21 @@ def calculate_crr(
         }
     """
     try:
-        T = max(float(T_days) / 365.0, 1e-6)
-        S, K, r, sigma, q = float(S), float(K), float(r), float(sigma), float(q)
+        mat_dt = _parse_date(maturity_date, 90)
+            
+        T_days = max((mat_dt.date() - date.today()).days, 1)
+        T = T_days / 365.0
+        S, K, r, q = float(S), float(K), float(r), float(q)
         N = int(N)
 
-        price = _crr_models.cox_ross_rubinstein_price(S, K, T, r, q, sigma, N, option_type)
+        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K, mat_dt, option_type)
+        sigma_used = iv if iv is not None else (_store.historical_vol or 0.20)
+        sigma_source = "IV" if iv is not None else "Historique"
+
+        price = _crr_models.cox_ross_rubinstein_price(S, K, T, r, q, sigma_used, N, option_type)
         price = round(float(price), 4)
 
-        greeks = _crr_models.calculate_greeks_crr(S, K, T, r, q, sigma, N, option_type)
+        greeks = _crr_models.calculate_greeks_crr(S, K, T, r, q, sigma_used, N, option_type)
         greeks = {k: round(float(v), 6) for k, v in greeks.items()}
 
         payoff_data = _payoff_curve(K, price, option_type, position, S)
@@ -361,7 +387,7 @@ def calculate_crr(
             for s in spots:
                 try:
                     g = _crr_models.calculate_greeks_crr(
-                        float(s), K, T, r, q, sigma, n_curve, option_type
+                        float(s), K, T, r, q, sigma_used, n_curve, option_type
                     )
                     curve.append({"spot": round(float(s), 2), "value": round(g[greek_name], 6)})
                 except Exception:
@@ -373,10 +399,12 @@ def calculate_crr(
         else:
             breakeven = round(K - price, 2) if position == "long" else round(K + price, 2)
 
-        _store.update(sigma=sigma, pricing_method="CRR")
+        _store.update(sigma=sigma_used, pricing_method="CRR")
 
         return {
             "price": price,
+            "sigma": sigma_used,
+            "sigma_source": sigma_source,
             "greeks": greeks,
             "payoff_data": payoff_data,
             **greek_curves,
@@ -454,10 +482,7 @@ def calculate_smile(ticker: str, expiry_str: str) -> Dict:
     """
     ticker = ticker.strip().upper()
     try:
-        try:
-            maturity_dt = datetime.strptime(expiry_str, "%Y-%m-%d")
-        except Exception:
-            maturity_dt = datetime.strptime(_next_weekday_after(60), "%Y-%m-%d")
+        maturity_dt = _parse_date(expiry_str, 60)
 
         opt_chain, closest_date = _data_fetcher.get_option_data_chain(ticker, maturity_dt)
         if opt_chain is None:
@@ -545,7 +570,8 @@ def calculate_surface(ticker: str) -> Dict:
 @eel.expose
 def price_exotic(
     exotic_type: str,
-    S: float, K: float, T_days: float, r: float, sigma: float, q: float,
+    ticker: str,
+    S: float, K: float, maturity_date: str, r: float, q: float,
     option_type: str,
     # Paramètres spécifiques (optionnels selon le type)
     barrier: Optional[float] = None,
@@ -575,66 +601,96 @@ def price_exotic(
         }
     """
     try:
-        T = max(float(T_days) / 365.0, 1e-6)
-        S, K, r, sigma, q = float(S), float(K), float(r), float(sigma), float(q)
+        mat_dt = _parse_date(maturity_date, 90)
 
-        if exotic_type == "barrier_analytical":
+        T_days = max((mat_dt.date() - date.today()).days, 1)
+        T = T_days / 365.0
+        S, K, r, q = float(S), float(K), float(r), float(q)
+
+        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K, mat_dt, option_type)
+        sigma = iv if iv is not None else (_store.historical_vol or 0.20)
+        sigma_source = "IV" if iv is not None else "Historique"
+
+        results = {}
+
+        if exotic_type == "barrier":
             if barrier is None:
-                return {"error": "barrier requis pour barrier_analytical"}
-            res = price_barrier_analytical(S, K, T, r, sigma, q, float(barrier),
-                                          option_type, barrier_type)
+                return {"error": "barrier requis pour barrier option"}
+            # Analytical
+            try:
+                res_ana = price_barrier_analytical(S, K, T, r, sigma, q, float(barrier),
+                                                   option_type, barrier_type)
+                results["analytical"] = {
+                    "price": float(res_ana.price),
+                    "method": res_ana.method
+                }
+            except Exception as e:
+                pass
+            # Monte Carlo
+            try:
+                res_mc = price_barrier_mc(S, K, T, r, sigma, q, float(barrier),
+                                          option_type, barrier_type, n_sims, n_steps, seed)
+            except Exception as e:
+                res_mc = None
 
-        elif exotic_type == "barrier_mc":
-            if barrier is None:
-                return {"error": "barrier requis pour barrier_mc"}
-            res = price_barrier_mc(S, K, T, r, sigma, q, float(barrier),
-                                   option_type, barrier_type, n_sims, n_steps, seed)
+        elif exotic_type == "asian":
+            res_mc = price_asian_mc(S, K, T, r, sigma, q, option_type, averaging,
+                                    n_sims, n_steps, seed)
 
-        elif exotic_type == "asian_mc":
-            res = price_asian_mc(S, K, T, r, sigma, q, option_type, averaging,
-                                 n_sims, n_steps, seed)
+        elif exotic_type == "lookback":
+            res_mc = price_lookback_mc(S, T, r, sigma, q, option_type, n_sims, n_steps, seed)
 
-        elif exotic_type == "lookback_mc":
-            res = price_lookback_mc(S, T, r, sigma, q, option_type, n_sims, n_steps, seed)
-
-        elif exotic_type == "digital_analytical":
-            res = price_digital_analytical(S, K, T, r, sigma, q, option_type, payoff_amount)
-
-        elif exotic_type == "digital_mc":
-            res = price_digital_mc(S, K, T, r, sigma, q, option_type, payoff_amount,
-                                   n_sims, n_steps, seed)
+        elif exotic_type == "digital":
+            try:
+                res_ana = price_digital_analytical(S, K, T, r, sigma, q, option_type, payoff_amount)
+                results["analytical"] = {
+                    "price": float(res_ana.price),
+                    "method": res_ana.method
+                }
+            except Exception as e:
+                pass
+            try:
+                res_mc = price_digital_mc(S, K, T, r, sigma, q, option_type, payoff_amount,
+                                          n_sims, n_steps, seed)
+            except Exception as e:
+                res_mc = None
         else:
             return {"error": f"Type exotique inconnu: {exotic_type}"}
 
-        # Sérialisation des trajectoires (sous-échantillon pour le graphique)
         paths_data = None
-        if res.price_paths is not None:
-            paths = res.price_paths  # shape (n_sample, n_steps+1)
-            n_sample = min(50, paths.shape[0])
-            rng = np.random.default_rng(seed)
-            idx = rng.choice(paths.shape[0], size=n_sample, replace=False)
-            paths_data = []
-            for path in paths[idx]:
-                paths_data.append([round(float(v), 4) for v in path])
-
-        # Distribution des payoffs (histogramme)
         dist_data = None
-        if res.payoffs is not None:
-            payoffs = res.payoffs
-            counts, bin_edges = np.histogram(payoffs, bins=30)
-            dist_data = [
-                {
-                    "bucket": round(float((bin_edges[i] + bin_edges[i+1]) / 2), 2),
-                    "count": int(counts[i])
-                }
-                for i in range(len(counts))
-            ]
+        if "res_mc" in locals() and res_mc is not None:
+            results["mc"] = {
+                "price": float(res_mc.price),
+                "method": res_mc.method,
+                "std_error": float(res_mc.std_error) if res_mc.std_error is not None else None,
+                "ci_95": list(res_mc.ci_95) if res_mc.ci_95 is not None else None,
+            }
+            if res_mc.price_paths is not None:
+                paths = res_mc.price_paths
+                n_sample = min(50, paths.shape[0])
+                rng = np.random.default_rng(seed)
+                idx = rng.choice(paths.shape[0], size=n_sample, replace=False)
+                paths_data = []
+                for path in paths[idx]:
+                    paths_data.append([round(float(v), 4) for v in path])
+            if res_mc.payoffs is not None:
+                payoffs = res_mc.payoffs
+                counts, bin_edges = np.histogram(payoffs, bins=30)
+                dist_data = [{"bucket": round(float((bin_edges[i] + bin_edges[i+1]) / 2), 2),
+                              "count": int(counts[i])} for i in range(len(counts))]
+
+        if not results:
+            return {"error": "Le calcul a echoue pour l'option demandee."}
+
+        # fallback pour price general a fournir
+        main_price = results.get("analytical", results.get("mc"))["price"]
 
         return {
-            "price": float(res.price),
-            "method": res.method,
-            "std_error": float(res.std_error) if res.std_error is not None else None,
-            "ci_95": list(res.ci_95) if res.ci_95 is not None else None,
+            "price": main_price,
+            "sigma": sigma,
+            "sigma_source": sigma_source,
+            "results": results,
             "price_paths": paths_data,
             "payoff_distribution": dist_data,
             "S": S,
@@ -663,7 +719,6 @@ def calculate_strategy(
     S: float,
     T_days: float,
     r: float,
-    sigma: float,
     q: float,
     expiry_str: str,
 ) -> Dict:
@@ -683,25 +738,28 @@ def calculate_strategy(
     """
     try:
         T = max(float(T_days) / 365.0, 1e-6)
-        S, r, sigma, q = float(S), float(r), float(sigma), float(q)
+        S, r, q = float(S), float(r), float(q)
 
-        try:
-            maturity_dt = datetime.strptime(expiry_str, "%Y-%m-%d")
-        except Exception:
-            maturity_dt = datetime.strptime(_next_weekday_after(int(T_days)), "%Y-%m-%d")
+        maturity_dt = _parse_date(expiry_str, int(T_days))
+
+        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, S, maturity_dt, "call")
+        sigma_used = iv if iv is not None else (_store.historical_vol or 0.20)
+        sigma_source = "IV" if iv is not None else "Historique"
 
         legs, T_eff = _strategy_mgr.build_legs(
-            strategy_name, S, T, r, sigma, q, maturity_dt, ticker,
+            strategy_name, S, T, r, sigma_used, q, maturity_dt, ticker,
             _data_fetcher, _option_models
         )
 
         S_range = np.linspace(S * 0.6, S * 1.4, 300)
         payoff = _strategy_mgr.compute_payoff(legs, S_range)
         value_today = _strategy_mgr.compute_value_today(
-            legs, S_range, S, T_eff, r, sigma, q, _option_models
+            legs, S_range, S, T_eff, r, sigma_used, q, _option_models
         )
         metrics = _strategy_mgr.compute_metrics(legs, S_range, payoff)
-        greeks = _strategy_mgr.compute_greeks(legs, S, T_eff, r, sigma, q, _option_models)
+        greeks = _strategy_mgr.compute_greeks(legs, S, T_eff, r, sigma_used, q, _option_models)
+        
+        _store.update(sigma=sigma_used, pricing_method="Strategy")
 
         # Sérialisation
         def _fmt(val):
@@ -728,6 +786,8 @@ def calculate_strategy(
                 for s, v in zip(S_range, value_today)
             ],
             "metrics": ser_metrics,
+            "sigma": sigma_used,
+            "sigma_source": sigma_source,
             "greeks": greeks,
             "error": None,
         }
@@ -747,7 +807,8 @@ def run_forecast(
     T_days: float,
     option_type: str,
     expiry_str: str,
-    history_days: int = 30,
+    history_days: int = 60,
+    forecast_days: int = 10,
 ) -> Dict:
     """
     Lance la prédiction IV avec TimesFM et le repricing de l'option.
@@ -791,22 +852,23 @@ def run_forecast(
         )
 
         # Inférence TimesFM
-        horizon = 10
+        horizon = forecast_days
         try:
-            iv_forecast_raw = fl.run_timesfm_inference(iv_series, horizon)
+            iv_fc_raw, _qf, iv_series_out = fl.run_iv_forecast(iv_series, horizon)
         except Exception as e_tfm:
             logger.warning("TimesFM failed: %s", e_tfm)
             return {"error": f"TimesFM non disponible: {e_tfm}"}
 
         iv_fc, opt_prices, deltas, iv_hist, hist_opt, hist_d, x_hist = \
             fl.process_iv_forecast_results(
-                iv_forecast_raw, iv_series, horizon,
+                iv_fc_raw, iv_series_out, horizon,
                 K=K, T_total=T_total, S=float(S), r=r, q=q,
                 option_type=option_type,
             )
 
         def _to_list(arr):
-            return [round(float(v), 6) if v is not None and np.isfinite(v) else None for v in arr]
+            flat = np.array(arr).flatten()
+            return [round(float(v), 6) if v is not None and np.isfinite(v) else None for v in flat]
 
         return {
             "iv_forecast": _to_list(iv_fc),

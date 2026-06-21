@@ -104,11 +104,19 @@ export interface DistPoint {
   count: number;
 }
 
-export interface ExoticResult {
+export interface ExoticPriceEntry {
   price: number;
   method: string;
-  std_error: number | null;
-  ci_95: [number, number] | null;
+  std_error?: number | null;
+  ci_95?: [number, number] | null;
+}
+
+export interface ExoticResult {
+  price: number;
+  results: {
+    analytical?: ExoticPriceEntry;
+    mc?: ExoticPriceEntry & { std_error: number | null; ci_95: [number, number] | null };
+  } | null;
   price_paths: number[][] | null;
   payoff_distribution: DistPoint[] | null;
   S: number;
@@ -189,12 +197,14 @@ interface EelAPI {
 
   // Modèles de pricing
   calculate_bsm(
-    S: number, K: number, T_days: number, r: number, sigma: number, q: number,
+    ticker: string, S: number, K: number, maturity_date: string,
+    r: number, q: number,
     option_type: string, position: string
   ): () => Promise<BsmResult>;
 
   calculate_crr(
-    S: number, K: number, T_days: number, r: number, sigma: number, q: number,
+    ticker: string, S: number, K: number, maturity_date: string,
+    r: number, q: number,
     N: number, option_type: string, position: string
   ): () => Promise<CrrResult>;
 
@@ -213,7 +223,8 @@ interface EelAPI {
   // Exotiques
   price_exotic(
     exotic_type: string,
-    S: number, K: number, T_days: number, r: number, sigma: number, q: number,
+    ticker: string,
+    S: number, K: number, maturity_date: string, r: number, q: number,
     option_type: string,
     barrier?: number | null,
     barrier_type?: string,

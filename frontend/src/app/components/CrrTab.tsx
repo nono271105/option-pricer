@@ -1,9 +1,5 @@
 import React, { useState, useRef } from 'react';
-import {
-  AreaChart, Area, LineChart, Line,
-  XAxis, YAxis, CartesianGrid,
-  ResponsiveContainer, ReferenceLine,
-} from 'recharts';
+import Plot from 'react-plotly.js';
 import { useMarket } from '../App';
 
 type GreekKey = 'delta' | 'gamma' | 'theta' | 'vega' | 'rho';
@@ -20,6 +16,8 @@ interface CrrState {
   breakeven: number | null;
   S: number | null;
   K: number | null;
+  sigma?: number;
+  sigma_source?: string;
   loading: boolean;
   error: string | null;
 }
@@ -31,7 +29,7 @@ export function CrrTab() {
   const strikeRef  = useRef<HTMLInputElement>(null);
   const maturityRef = useRef<HTMLInputElement>(null);
   const positionRef = useRef<HTMLSelectElement>(null);
-  const sigmaRef   = useRef<HTMLInputElement>(null);
+
   const stepsRef   = useRef<HTMLInputElement>(null);
 
   const [state, setState] = useState<CrrState>({
@@ -52,11 +50,10 @@ export function CrrTab() {
   const handleCalculate = async () => {
     setState(s => ({ ...s, loading: true, error: null }));
     try {
+      const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
       const S = market.S ?? 100;
       const K = parseFloat(strikeRef.current?.value || String(Math.round(S)));
-      const sigma = parseFloat(sigmaRef.current?.value || '20') / 100;
       const matStr = maturityRef.current?.value || '';
-      const T_days = matStr ? computeDaysFromDate(matStr) : 90;
       const N = parseInt(stepsRef.current?.value || '200');
       const optType = optTypeRef.current?.value || 'call';
       const position = positionRef.current?.value || 'long';
@@ -65,7 +62,7 @@ export function CrrTab() {
         setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
         return;
       }
-      const res = await window.eel.calculate_crr(S, K, T_days, market.r, sigma, market.q, N, optType, position)();
+      const res = await window.eel.calculate_crr(ticker, S, K, matStr, market.r, market.q, N, optType, position)();
 
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
@@ -78,6 +75,7 @@ export function CrrTab() {
         payoff_data: res.payoff_data,
         activeGreekData: (res as any)[`${greekKey}_data`] || [],
         breakeven: res.breakeven, S: res.S, K: res.K,
+        sigma: res.sigma, sigma_source: res.sigma_source,
       }));
     } catch (e: any) {
       setState(s => ({ ...s, loading: false, error: String(e) }));
@@ -88,12 +86,12 @@ export function CrrTab() {
     setState(s => ({ ...s, activeGreek: key }));
     if (!window.eel || !state.S || !state.K) return;
     try {
-      const sigma = parseFloat(sigmaRef.current?.value || '20') / 100;
-      const T_days = maturityRef.current?.value ? computeDaysFromDate(maturityRef.current.value) : 90;
+      const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
+      const matStr = maturityRef.current?.value || '';
       const N = parseInt(stepsRef.current?.value || '200');
       const optType = optTypeRef.current?.value || 'call';
       const position = positionRef.current?.value || 'long';
-      const res = await window.eel.calculate_crr(state.S, state.K, T_days, market.r, sigma, market.q, N, optType, position)();
+      const res = await window.eel.calculate_crr(ticker, state.S, state.K, matStr, market.r, market.q, N, optType, position)();
       if (!res.error) {
         setState(s => ({ ...s, activeGreek: key, activeGreekData: (res as any)[`${key}_data`] || [] }));
       }
@@ -103,20 +101,19 @@ export function CrrTab() {
   const fmtG = (v?: number, d = 4) => v !== undefined ? v.toFixed(d) : 'N/C';
   const gc = (v?: number) => !v ? 'text-[#888888]' : v >= 0 ? 'text-[#00FF00]' : 'text-[#FF3333]';
   const defaultStrike = market.S ? Math.round(market.S) : 290;
-  const defaultSigma  = (market.histVol * 100).toFixed(2);
   const defaultMat    = getDefaultMaturity();
 
   return (
     <div className="flex flex-col h-full gap-1 p-1 overflow-auto bg-[#000000]">
       {state.error && (
-        <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] rounded">⚠ {state.error}</div>
+        <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] rounded">Warning {state.error}</div>
       )}
 
       <div className="flex gap-1">
         {/* PARAMÈTRES CRR */}
         <div className="border border-[#222222] flex-shrink-0 w-[420px]">
           <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-            <span className="font-bold text-white">▼ PARAMÈTRES CRR (Binomial Américain)</span>
+            <span className="font-bold text-white"> PARAMÈTRES CRR (Binomial Américain)</span>
           </div>
           <div className="bg-[#000000] p-1.5 space-y-1.5">
             <FR label="Ticker">
@@ -140,9 +137,6 @@ export function CrrTab() {
                 <option value="short">short</option>
               </select>
             </FR>
-            <FR label="Volatilité σ (%)">
-              <input ref={sigmaRef} key={defaultSigma} defaultValue={defaultSigma} type="number" step="0.01" className={INPUT} />
-            </FR>
             <FR label="Pas de l'arbre (N)">
               <input ref={stepsRef} defaultValue="200" type="number" step="50" min="10" max="1000" className={INPUT} />
             </FR>
@@ -150,11 +144,11 @@ export function CrrTab() {
             <div className="pt-2 flex gap-1">
               <button id="crr-fetch-btn" onClick={handleFetchData} disabled={state.loading}
                 className="flex-1 bg-[#2A2A2A] border border-[#444444] text-white py-1 hover:bg-[#3A3A3A] text-[10px] rounded-sm disabled:opacity-50">
-                {state.loading ? '⏳...' : 'Récupérer Données'}
+                {state.loading ? 'Chargement...' : 'Récupérer Données'}
               </button>
               <button id="crr-calc-btn" onClick={handleCalculate} disabled={state.loading}
                 className="flex-1 bg-[#4A90E2] text-white py-1 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
-                {state.loading ? '⏳...' : 'Calculer Prix CRR'}
+                {state.loading ? 'Calcul...' : 'Calculer Prix CRR'}
               </button>
             </div>
           </div>
@@ -164,13 +158,13 @@ export function CrrTab() {
         <div className="flex-1 flex flex-col gap-1">
           <div className="border border-[#222222]">
             <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-              <span className="font-bold text-white">▼ DONNÉES MARCHÉ</span>
+              <span className="font-bold text-white"> DONNÉES MARCHÉ</span>
             </div>
             <div className="bg-[#000000] p-1.5 grid grid-cols-2 gap-x-4 gap-y-1.5">
               <DR label="Prix Actuel (S)" value={market.S ? `${market.S.toFixed(2)} $` : 'N/C'} />
               <DR label="Taux SOFR (r)"   value={`${(market.r * 100).toFixed(2)}%`} />
               <DR label="Dividende (q)"   value={`${(market.q * 100).toFixed(2)}%`} />
-              <DR label="Vol. Historique" value={`${(market.histVol * 100).toFixed(2)}%`} />
+              <DR label={`Volatilité (σ) [${state.sigma_source || 'N/A'}]`} value={state.sigma ? `${(state.sigma * 100).toFixed(2)}%` : 'N/A'} />
               <DR label="Prix CRR (Américain)"
                 value={state.price !== null ? `${state.price.toFixed(4)} $` : 'N/C'}
                 highlight={state.price !== null} />
@@ -181,7 +175,7 @@ export function CrrTab() {
           {/* Grecs */}
           <div className="border border-[#222222]">
             <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-              <span className="font-bold text-white">▼ GRECS (CRR — différences finies)</span>
+              <span className="font-bold text-white"> GRECS (CRR  différences finies)</span>
               <span className="ml-2 text-[#888888] text-[9px]">Cliquer pour courbe ↓</span>
             </div>
             <div className="bg-[#000000] overflow-auto">
@@ -216,50 +210,102 @@ export function CrrTab() {
       <div className="flex gap-1 flex-1 min-h-[250px]">
         <div className="flex-1 border border-[#222222] flex flex-col">
           <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-            <span className="font-bold text-white">▼ ÉVOLUTION DU {state.activeGreek.toUpperCase()} (CRR)</span>
+            <span className="font-bold text-white"> ÉVOLUTION DU {state.activeGreek.toUpperCase()} (CRR)</span>
           </div>
           <div className="bg-[#0A0A0A] flex-1 p-2">
             {state.activeGreekData.length === 0 ? (
               <div className="flex items-center justify-center h-full text-[#888888] text-[11px]">Calculer pour afficher</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={state.activeGreekData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid stroke="#222222" vertical={false} />
-                  <XAxis dataKey="spot" stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} type="number" domain={['dataMin', 'dataMax']} />
-                  <YAxis stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} />
-                  {state.S && <ReferenceLine x={state.S} stroke="#FF4444" strokeDasharray="2 2" />}
-                  <Line type="monotone" dataKey="value" stroke="#4A90E2" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                </LineChart>
-              </ResponsiveContainer>
+              <Plot
+                data={[
+                  {
+                    x: state.activeGreekData.map(d => d.spot),
+                    y: state.activeGreekData.map(d => d.value),
+                    type: 'scatter' as const,
+                    mode: 'lines' as const,
+                    line: { color: '#4A90E2', width: 1.5 }
+                  }
+                ]}
+                layout={{
+                  autosize: true,
+                  margin: { l: 40, r: 20, t: 10, b: 30 },
+                  paper_bgcolor: 'transparent',
+                  plot_bgcolor: 'transparent',
+                  xaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                  yaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                  shapes: [
+                    ...(state.S ? [{
+                      type: 'line' as const, xref: 'x' as const, yref: 'paper' as const, x0: state.S, x1: state.S,
+                      y0: 0, y1: 1,
+                      line: { color: '#FF4444', dash: 'dash' as const, width: 1 }
+                    }] : [])
+                  ]
+                }}
+                style={{ width: '100%', height: '100%' }}
+                useResizeHandler={true}
+              />
             )}
           </div>
         </div>
 
         <div className="flex-1 border border-[#222222] flex flex-col">
           <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-            <span className="font-bold text-white">▼ PAYOFF DE L'OPTION (CRR)</span>
+            <span className="font-bold text-white"> PAYOFF DE L'OPTION (CRR)</span>
           </div>
           <div className="bg-[#0A0A0A] flex-1 p-2">
             {state.payoff_data.length === 0 ? (
               <div className="flex items-center justify-center h-full text-[#888888] text-[11px]">Calculer pour afficher</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={state.payoff_data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="crrPayoffGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#00FF00" stopOpacity={0.2} />
-                      <stop offset="100%" stopColor="#00FF00" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="#222222" vertical={false} />
-                  <XAxis dataKey="spot" stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} type="number" domain={['dataMin', 'dataMax']} />
-                  <YAxis stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} />
-                  <ReferenceLine y={0} stroke="#444444" />
-                  {state.K && <ReferenceLine x={state.K} stroke="#888888" strokeDasharray="2 2" />}
-                  {state.breakeven && <ReferenceLine x={state.breakeven} stroke="#D0D0D0" strokeDasharray="2 2" />}
-                  <Area type="linear" dataKey="payoff" stroke="#00FF00" strokeWidth={1.5} fill="url(#crrPayoffGrad)" isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <Plot
+                data={[
+                  {
+                    x: state.payoff_data.map(d => d.spot),
+                    y: state.payoff_data.map(d => d.payoff),
+                    type: 'scatter' as const,
+                    mode: 'lines' as const,
+                    line: { color: '#00FF00', width: 1.5 },
+                    fill: 'tozeroy',
+                    fillcolor: 'rgba(0, 255, 0, 0.1)'
+                  }
+                ]}
+                layout={{
+                  autosize: true,
+                  margin: { l: 40, r: 20, t: 10, b: 30 },
+                  paper_bgcolor: 'transparent',
+                  plot_bgcolor: 'transparent',
+                  xaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                  yaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                  shapes: [
+                    {
+                      type: 'line', xref: 'paper', x0: 0, x1: 1,
+                      y0: 0, y1: 0,
+                      line: { color: '#444444', width: 1 }
+                    },
+                    ...(state.K ? [{
+                      type: 'line' as const, xref: 'x' as const, yref: 'paper' as const, x0: state.K, x1: state.K,
+                      y0: 0, y1: 1,
+                      line: { color: '#888888', dash: 'dash' as const, width: 1 }
+                    }] : []),
+                    ...(state.breakeven ? [{
+                      type: 'line' as const, xref: 'x' as const, yref: 'paper' as const, x0: state.breakeven, x1: state.breakeven,
+                      y0: 0, y1: 1,
+                      line: { color: '#D0D0D0', dash: 'dash' as const, width: 1 }
+                    }] : [])
+                  ],
+                  annotations: [
+                    ...(state.K ? [{
+                      x: state.K, y: 1, xref: 'x' as const, yref: 'paper' as const,
+                      text: `K=${state.K}`, showarrow: false, yanchor: 'bottom', font: { color: '#888888', size: 9 }
+                    }] : []),
+                    ...(state.breakeven ? [{
+                      x: state.breakeven, y: 1, xref: 'x' as const, yref: 'paper' as const,
+                      text: `BE=${state.breakeven.toFixed(2)}`, showarrow: false, yanchor: 'bottom', font: { color: '#D0D0D0', size: 9 }
+                    }] : [])
+                  ]
+                }}
+                style={{ width: '100%', height: '100%' }}
+                useResizeHandler={true}
+              />
             )}
           </div>
         </div>

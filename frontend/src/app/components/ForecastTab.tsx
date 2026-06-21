@@ -1,8 +1,5 @@
 import React, { useState, useRef } from 'react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  ResponsiveContainer, ReferenceLine, Tooltip,
-} from 'recharts';
+import Plot from 'react-plotly.js';
 import { useMarket } from '../App';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -33,6 +30,7 @@ export function ForecastTab() {
   const optTypeRef   = useRef<HTMLSelectElement>(null);
   const maturityRef  = useRef<HTMLInputElement>(null);
   const histDaysRef  = useRef<HTMLInputElement>(null);
+  const forecastDaysRef = useRef<HTMLInputElement>(null);
 
   const [state, setState] = useState<ForecastState>({
     data: [], occ_symbol: null, loading: false, error: null,
@@ -46,14 +44,15 @@ export function ForecastTab() {
       const optType  = optTypeRef.current?.value || 'call';
       const matStr   = maturityRef.current?.value || getDefaultMaturity();
       const T_days   = computeDaysFromDate(matStr);
-      const histDays = parseInt(histDaysRef.current?.value || '30');
+      const histDays = parseInt(histDaysRef.current?.value || '60');
+      const forecastDays = parseInt(forecastDaysRef.current?.value || '10');
 
-      if (!window.eel) {
+      if (!(window as any).eel) {
         setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
         return;
       }
 
-      const res = await window.eel.run_forecast(ticker, strike, T_days, optType, matStr, histDays)();
+      const res = await (window as any).eel.run_forecast(ticker, strike, T_days, optType, matStr, histDays, forecastDays)();
 
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
@@ -112,14 +111,14 @@ export function ForecastTab() {
 
       {state.error && (
         <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] rounded shrink-0">
-          ⚠ {state.error}
+          Warning {state.error}
         </div>
       )}
 
       {/* Toolbar */}
       <div className="border border-[#222222] shrink-0">
         <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222] justify-between flex-wrap gap-2">
-          <span className="font-bold text-white">▼ FORECAST IV — Google TimesFM</span>
+          <span className="font-bold text-white"> FORECAST IV</span>
           <div className="flex items-center gap-2 flex-wrap">
             <label className="text-[#888888] flex items-center gap-1">
               Ticker :
@@ -147,31 +146,35 @@ export function ForecastTab() {
             </label>
             <label className="text-[#888888] flex items-center gap-1">
               Historique (j) :
-              <input ref={histDaysRef} defaultValue="30" type="number" step="10" min="10" max="180"
-                className="bg-[#121212] border border-[#333333] text-white px-1.5 py-0.5 text-[11px] w-[60px] outline-none ml-1" />
+              <input ref={histDaysRef} defaultValue="60" type="number" step="10" min="10" max="180"
+                className="bg-[#121212] border border-[#333333] text-white px-1.5 py-0.5 text-[11px] w-[50px] outline-none ml-1" />
+            </label>
+            <label className="text-[#888888] flex items-center gap-1">
+              Horizon (j) :
+              <input ref={forecastDaysRef} defaultValue="10" type="number" step="1" min="1" max="90"
+                className="bg-[#121212] border border-[#333333] text-white px-1.5 py-0.5 text-[11px] w-[50px] outline-none ml-1" />
             </label>
             <button id="forecast-run-btn" onClick={handleForecast} disabled={state.loading}
               className="bg-[#4A90E2] text-white px-3 py-0.5 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
-              {state.loading ? '⏳ Calcul...' : '▶ Lancer Forecast'}
+              {state.loading ? 'Calcul...' : 'Lancer le Forecast'}
             </button>
           </div>
         </div>
 
         {/* Model info bar */}
         <div className="flex gap-6 px-2 py-0.5 bg-[#0A0A0A] text-[9px] text-[#888888]">
-          <span>Modèle : <span className="text-white">Google TimesFM 2.5-200M</span></span>
-          <span>Source IV : <span className="text-white">Inversion BSM via marketdata.app</span></span>
           {state.occ_symbol && <span>Contrat OCC : <span className="text-[#FFCC00]">{state.occ_symbol}</span></span>}
         </div>
       </div>
 
-      {/* Chart 1: IV */}
-      <div className="flex-1 border border-[#222222] flex flex-col min-h-[180px]">
+      <div className="flex gap-1 flex-1 min-h-[220px]">
+        {/* Chart 1: IV */}
+        <div className="flex-1 border border-[#222222] flex flex-col">
         <div className="flex items-center justify-between px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-          <span className="font-bold text-white">▼ VOLATILITÉ IMPLICITE — Historique + Forecast</span>
+          <span className="font-bold text-white"> VOLATILITÉ IMPLICITE  Historique + Forecast</span>
           <div className="flex gap-3 text-[9px] text-[#888888]">
-            <span className="flex items-center gap-1"><span className="text-[#D0D0D0]">—</span> IV historique</span>
-            <span className="flex items-center gap-1"><span className="text-[#4A90E2]">—</span> IV forecast</span>
+            <span className="flex items-center gap-1"><span className="text-[#D0D0D0]"></span> IV historique</span>
+            <span className="flex items-center gap-1"><span className="text-[#4A90E2]"></span> IV forecast</span>
           </div>
         </div>
         <div className="flex-1 bg-[#0A0A0A] p-2">
@@ -180,78 +183,163 @@ export function ForecastTab() {
               Configurez les paramètres et lancez le forecast
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={state.data} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid stroke="#1A1A1A" vertical={false} />
-                <XAxis dataKey="day" stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }}
-                  label={{ value: 'Jours (0 = début forecast)', position: 'insideBottom', fill: '#888888', fontSize: 9, offset: -3 }} />
-                <YAxis stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
-                <Tooltip
-                  contentStyle={{ background: '#111', border: '1px solid #333', fontSize: 10 }}
-                  formatter={(v: any, name: string) => [`${Number(v).toFixed(2)}%`, name]}
-                />
-                <ReferenceLine x={0} stroke="#FFCC00" strokeDasharray="3 3" label={{ value: 'Forecast →', fill: '#FFCC00', fontSize: 9, position: 'top' }} />
-                <Line type="monotone" dataKey="iv_hist" name="IV historique" stroke="#D0D0D0" strokeWidth={1.5}
-                  dot={false} isAnimationActive={false} connectNulls={false} />
-                <Line type="monotone" dataKey="iv_forecast" name="IV forecast" stroke="#4A90E2" strokeWidth={2}
-                  dot={false} isAnimationActive={false} connectNulls={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <Plot
+              data={[
+                {
+                  x: state.data.map(d => d.day),
+                  y: state.data.map(d => d.iv_hist),
+                  type: 'scatter' as const,
+                  mode: 'lines' as const,
+                  line: { color: '#D0D0D0', width: 1.5 },
+                  name: 'IV historique',
+                  connectgaps: false
+                },
+                {
+                  x: state.data.map(d => d.day),
+                  y: state.data.map(d => d.iv_forecast),
+                  type: 'scatter' as const,
+                  mode: 'lines' as const,
+                  line: { color: '#4A90E2', width: 2 },
+                  name: 'IV forecast',
+                  connectgaps: false
+                }
+              ]}
+              layout={{
+                autosize: true,
+                margin: { l: 40, r: 20, t: 10, b: 30 },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                xaxis: { title: { text: 'Jours (0 = début forecast)', font: { size: 9, color: '#888' } }, gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                yaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 }, ticksuffix: '%' },
+                hovermode: 'x unified',
+                shapes: [
+                  {
+                    type: 'line' as const, xref: 'x' as const, yref: 'paper' as const, x0: 0, x1: 0,
+                    y0: 0, y1: 1,
+                    line: { color: '#FFCC00', dash: 'dash' as const, width: 1 }
+                  }
+                ],
+                annotations: [
+                  {
+                    x: 0, y: 1, xref: 'x' as const, yref: 'paper' as const,
+                    text: 'Forecast →', showarrow: false, yanchor: 'bottom', font: { color: '#FFCC00', size: 9 }
+                  }
+                ],
+                showlegend: false
+              }}
+              style={{ width: '100%', height: '100%' }}
+              useResizeHandler={true}
+            />
           )}
         </div>
       </div>
 
       {/* Chart 2: Prix option */}
       {state.data.length > 0 && (
-        <div className="flex-1 border border-[#222222] flex flex-col min-h-[160px]">
+        <div className="flex-1 border border-[#222222] flex flex-col">
           <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-            <span className="font-bold text-white">▼ PRIX DE L'OPTION (BSM à IV prédite)</span>
+            <span className="font-bold text-white"> PRIX DE L'OPTION (BSM à IV prédite)</span>
           </div>
           <div className="flex-1 bg-[#0A0A0A] p-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={state.data} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid stroke="#1A1A1A" vertical={false} />
-                <XAxis dataKey="day" stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} />
-                <YAxis stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} />
-                <Tooltip
-                  contentStyle={{ background: '#111', border: '1px solid #333', fontSize: 10 }}
-                  formatter={(v: any, name: string) => [`${Number(v).toFixed(4)} $`, name]}
-                />
-                <ReferenceLine x={0} stroke="#FFCC00" strokeDasharray="3 3" />
-                <Line type="monotone" dataKey="price_hist" name="Prix historique" stroke="#D0D0D0" strokeWidth={1.5}
-                  dot={false} isAnimationActive={false} connectNulls={false} />
-                <Line type="monotone" dataKey="price_forecast" name="Prix forecast" stroke="#00FF00" strokeWidth={2}
-                  dot={false} isAnimationActive={false} connectNulls={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <Plot
+              data={[
+                {
+                  x: state.data.map(d => d.day),
+                  y: state.data.map(d => d.price_hist),
+                  type: 'scatter' as const,
+                  mode: 'lines' as const,
+                  line: { color: '#D0D0D0', width: 1.5 },
+                  name: 'Prix historique',
+                  connectgaps: false
+                },
+                {
+                  x: state.data.map(d => d.day),
+                  y: state.data.map(d => d.price_forecast),
+                  type: 'scatter' as const,
+                  mode: 'lines' as const,
+                  line: { color: '#00FF00', width: 2 },
+                  name: 'Prix forecast',
+                  connectgaps: false
+                }
+              ]}
+              layout={{
+                autosize: true,
+                margin: { l: 40, r: 20, t: 10, b: 30 },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                xaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                yaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                hovermode: 'x unified',
+                shapes: [
+                  {
+                    type: 'line' as const, xref: 'x' as const, yref: 'paper' as const, x0: 0, x1: 0,
+                    y0: 0, y1: 1,
+                    line: { color: '#FFCC00', dash: 'dash' as const, width: 1 }
+                  }
+                ],
+                showlegend: false
+              }}
+              style={{ width: '100%', height: '100%' }}
+              useResizeHandler={true}
+            />
           </div>
         </div>
       )}
+      </div>
 
       {/* Chart 3: Delta */}
       {state.data.length > 0 && (
         <div className="flex-1 border border-[#222222] flex flex-col min-h-[160px]">
           <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-            <span className="font-bold text-white">▼ DELTA (recalculé jour par jour)</span>
+            <span className="font-bold text-white"> DELTA (recalculé jour par jour)</span>
           </div>
           <div className="flex-1 bg-[#0A0A0A] p-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={state.data} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid stroke="#1A1A1A" vertical={false} />
-                <XAxis dataKey="day" stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} />
-                <YAxis stroke="#444444" tick={{ fill: '#888888', fontSize: 9 }} domain={[-1, 1]} />
-                <Tooltip
-                  contentStyle={{ background: '#111', border: '1px solid #333', fontSize: 10 }}
-                  formatter={(v: any, name: string) => [Number(v).toFixed(4), name]}
-                />
-                <ReferenceLine x={0} stroke="#FFCC00" strokeDasharray="3 3" />
-                <ReferenceLine y={0} stroke="#444444" />
-                <Line type="monotone" dataKey="delta_hist" name="Delta historique" stroke="#D0D0D0" strokeWidth={1.5}
-                  dot={false} isAnimationActive={false} connectNulls={false} />
-                <Line type="monotone" dataKey="delta_forecast" name="Delta forecast" stroke="#FFCC00" strokeWidth={2}
-                  dot={false} isAnimationActive={false} connectNulls={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <Plot
+              data={[
+                {
+                  x: state.data.map(d => d.day),
+                  y: state.data.map(d => d.delta_hist),
+                  type: 'scatter' as const,
+                  mode: 'lines' as const,
+                  line: { color: '#D0D0D0', width: 1.5 },
+                  name: 'Delta historique',
+                  connectgaps: false
+                },
+                {
+                  x: state.data.map(d => d.day),
+                  y: state.data.map(d => d.delta_forecast),
+                  type: 'scatter' as const,
+                  mode: 'lines' as const,
+                  line: { color: '#FFCC00', width: 2 },
+                  name: 'Delta forecast',
+                  connectgaps: false
+                }
+              ]}
+              layout={{
+                autosize: true,
+                margin: { l: 40, r: 20, t: 10, b: 30 },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                xaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                yaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 }, range: [-1, 1] },
+                hovermode: 'x unified',
+                shapes: [
+                  {
+                    type: 'line', xref: 'paper', x0: 0, x1: 1,
+                    y0: 0, y1: 0,
+                    line: { color: '#444444', width: 1 }
+                  },
+                  {
+                    type: 'line' as const, xref: 'x' as const, yref: 'paper' as const, x0: 0, x1: 0,
+                    y0: 0, y1: 1,
+                    line: { color: '#FFCC00', dash: 'dash' as const, width: 1 }
+                  }
+                ],
+                showlegend: false
+              }}
+              style={{ width: '100%', height: '100%' }}
+              useResizeHandler={true}
+            />
           </div>
         </div>
       )}

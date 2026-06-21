@@ -1,17 +1,10 @@
 import React, { useState, useRef, useCallback } from 'react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  ResponsiveContainer, ReferenceLine, BarChart, Bar,
-  AreaChart, Area,
-} from 'recharts';
+import Plot from 'react-plotly.js';
 import { useMarket } from '../App';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-type ExoticType =
-  | 'barrier_analytical' | 'barrier_mc'
-  | 'asian_mc' | 'lookback_mc'
-  | 'digital_analytical' | 'digital_mc';
+type ExoticType = 'barrier' | 'asian' | 'lookback' | 'digital';
 
 type BarrierType = 'down-and-out' | 'down-and-in' | 'up-and-out' | 'up-and-in';
 
@@ -20,15 +13,17 @@ interface DistPoint { bucket: number; count: number; }
 interface PayoffPoint { spot: number; payoff: number; }
 
 interface ExoticState {
-  price: number | null;
-  method: string | null;
-  std_error: number | null;
-  ci_95: [number, number] | null;
+  results: {
+    analytical?: { price: number; method: string };
+    mc?: { price: number; method: string; std_error: number | null; ci_95: [number, number] | null };
+  } | null;
   price_paths: PathPoint[];
   payoff_distribution: DistPoint[];
   payoff_profile: PayoffPoint[];
   S: number | null;
   K: number | null;
+  sigma?: number;
+  sigma_source?: string;
   loading: boolean;
   error: string | null;
 }
@@ -42,7 +37,6 @@ export function ExoticsTab() {
   const optTypeRef    = useRef<HTMLSelectElement>(null);
   const strikeRef     = useRef<HTMLInputElement>(null);
   const maturityRef   = useRef<HTMLInputElement>(null);
-  const sigmaRef      = useRef<HTMLInputElement>(null);
   const barrierRef    = useRef<HTMLInputElement>(null);
   const barrierTypeRef = useRef<HTMLSelectElement>(null);
   const avgRef        = useRef<HTMLSelectElement>(null);
@@ -51,16 +45,16 @@ export function ExoticsTab() {
   const nStepsRef     = useRef<HTMLInputElement>(null);
 
   const [state, setState] = useState<ExoticState>({
-    price: null, method: null, std_error: null, ci_95: null,
+    results: null,
     price_paths: [], payoff_distribution: [], payoff_profile: [],
     S: null, K: null, loading: false, error: null,
   });
 
-  const [exoticType, setExoticType] = useState<ExoticType>('digital_analytical');
+  const [exoticType, setExoticType] = useState<ExoticType>('digital');
   const showBarrier = exoticType.startsWith('barrier');
   const showAveraging = exoticType === 'asian_mc';
   const showPayoffAmt = exoticType.includes('digital');
-  const isMC = exoticType.endsWith('_mc');
+  const isMC = true; // Always true since MC is computed for all if nSims provided
 
   const handleFetchData = async () => {
     const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
@@ -74,9 +68,7 @@ export function ExoticsTab() {
     try {
       const S = market.S ?? 100;
       const K = parseFloat(strikeRef.current?.value || String(Math.round(S)));
-      const sigma = parseFloat(sigmaRef.current?.value || '20') / 100;
       const matStr = maturityRef.current?.value || '';
-      const T_days = matStr ? computeDaysFromDate(matStr) : 90;
       const optType = optTypeRef.current?.value || 'call';
       const barrierVal = showBarrier ? parseFloat(barrierRef.current?.value || '0') : null;
       const barrierType = (barrierTypeRef.current?.value || 'down-and-out') as BarrierType;
@@ -90,8 +82,9 @@ export function ExoticsTab() {
         return;
       }
 
+      const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
       const res = await window.eel.price_exotic(
-        exoticType, S, K, T_days, market.r, sigma, market.q, optType,
+        exoticType, ticker, S, K, matStr, market.r, market.q, optType,
         barrierVal, barrierType, averaging, payoffAmt, nSims, nSteps, 42
       )();
 
@@ -124,14 +117,13 @@ export function ExoticsTab() {
 
       setState(s => ({
         ...s, loading: false, error: null,
-        price: res.price,
-        method: res.method,
-        std_error: res.std_error,
-        ci_95: res.ci_95,
+        results: res.results,
         price_paths: pathData,
         payoff_distribution: res.payoff_distribution ?? [],
         S: res.S,
         K: res.K,
+        sigma: res.sigma,
+        sigma_source: res.sigma_source,
       }));
     } catch (e: any) {
       setState(s => ({ ...s, loading: false, error: String(e) }));
@@ -140,7 +132,6 @@ export function ExoticsTab() {
 
   const numPaths = state.price_paths.length > 0 ? Object.keys(state.price_paths[0]).filter(k => k.startsWith('path_')).length : 0;
   const defaultStrike = market.S ? Math.round(market.S) : 100;
-  const defaultSigma = (market.histVol * 100).toFixed(2);
   const defaultBarrier = market.S ? Math.round(market.S * 0.85) : 85;
 
   return (
@@ -148,7 +139,7 @@ export function ExoticsTab() {
 
       {state.error && (
         <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] rounded shrink-0">
-          ⚠ {state.error}
+          Warning {state.error}
         </div>
       )}
 
@@ -158,7 +149,7 @@ export function ExoticsTab() {
         {/* PARAMÈTRES */}
         <div className="border border-[#222222] flex-shrink-0 w-[420px] flex flex-col">
           <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-            <span className="font-bold text-white">▼ PARAMÈTRES EXOTIQUES</span>
+            <span className="font-bold text-white"> PARAMÈTRES EXOTIQUES</span>
           </div>
           <div className="bg-[#000000] p-1.5 space-y-1.5">
             <FR label="Ticker">
@@ -168,12 +159,10 @@ export function ExoticsTab() {
               <select ref={exoticTypeRef} value={exoticType}
                 onChange={e => setExoticType(e.target.value as ExoticType)}
                 className={SEL}>
-                <option value="digital_analytical">Digitale (Analytique)</option>
-                <option value="digital_mc">Digitale (Monte Carlo)</option>
-                <option value="barrier_analytical">Barrière (Analytique)</option>
-                <option value="barrier_mc">Barrière (Monte Carlo)</option>
-                <option value="asian_mc">Asiatique (Monte Carlo)</option>
-                <option value="lookback_mc">Lookback (Monte Carlo)</option>
+                <option value="digital">Digitale</option>
+                <option value="barrier">Barrière</option>
+                <option value="asian">Asiatique</option>
+                <option value="lookback">Lookback</option>
               </select>
             </FR>
             <FR label="Type d'option">
@@ -189,10 +178,7 @@ export function ExoticsTab() {
             <FR label="Date d'échéance">
               <input ref={maturityRef} defaultValue={getDefaultMaturity()} type="date" className={INP} />
             </FR>
-            <FR label="Volatilité σ (%)">
-              <input ref={sigmaRef} key={defaultSigma} defaultValue={defaultSigma}
-                type="number" step="0.01" className={INP} />
-            </FR>
+
 
             {/* Barrière */}
             {showBarrier && (
@@ -245,11 +231,11 @@ export function ExoticsTab() {
             <div className="pt-2 flex gap-1">
               <button id="exotic-fetch-btn" onClick={handleFetchData} disabled={state.loading}
                 className="flex-1 bg-[#2A2A2A] border border-[#444444] text-white py-1 hover:bg-[#3A3A3A] text-[10px] rounded-sm disabled:opacity-50">
-                {state.loading ? '⏳...' : 'Récupérer Données'}
+                {state.loading ? 'Chargement...' : 'Récupérer Données'}
               </button>
               <button id="exotic-calc-btn" onClick={handleCalculate} disabled={state.loading}
                 className="flex-1 bg-[#4A90E2] text-white py-1 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
-                {state.loading ? '⏳ Calcul...' : 'Calculer'}
+                {state.loading ? 'Loading Calcul...' : 'Calculer'}
               </button>
             </div>
           </div>
@@ -261,29 +247,37 @@ export function ExoticsTab() {
           {/* DONNÉES MARCHÉ */}
           <div className="border border-[#222222]">
             <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-              <span className="font-bold text-white">▼ DONNÉES MARCHÉ</span>
+              <span className="font-bold text-white"> DONNÉES MARCHÉ</span>
             </div>
             <div className="bg-[#000000] p-1.5 grid grid-cols-2 gap-x-4 gap-y-1">
               <DR label="Prix Actuel (S)" value={market.S ? `${market.S.toFixed(2)} $` : 'N/C'} />
               <DR label="Taux SOFR (r)"   value={`${(market.r * 100).toFixed(2)}%`} />
               <DR label="Dividende (q)"   value={`${(market.q * 100).toFixed(2)}%`} />
-              <DR label="Vol. Hist. (σ₀)" value={`${(market.histVol * 100).toFixed(2)}%`} />
+              <DR label={`Volatilité (σ) [${state.sigma_source || 'N/A'}]`} value={state.sigma ? `${(state.sigma * 100).toFixed(2)}%` : 'N/A'} />
             </div>
           </div>
 
           {/* RÉSULTATS */}
           <div className="border border-[#222222]">
             <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-              <span className="font-bold text-white">▼ RÉSULTATS PRICING</span>
+              <span className="font-bold text-white"> RÉSULTATS PRICING</span>
             </div>
             <div className="bg-[#000000] p-1.5 space-y-1">
-              <DR label="Prix" value={state.price !== null ? `${state.price.toFixed(4)} $` : 'N/C'} highlight={state.price !== null} />
-              <DR label="Méthode" value={state.method ?? 'N/C'} />
-              {state.std_error !== null && (
-                <DR label="Std Error MC" value={`±${state.std_error.toFixed(4)}`} />
+              {state.results?.analytical && (
+                <>
+                  <DR label="Prix (Analytique)" value={`${state.results.analytical.price.toFixed(4)} $`} highlight />
+                </>
               )}
-              {state.ci_95 && (
-                <DR label="IC 95%" value={`[${state.ci_95[0].toFixed(4)}, ${state.ci_95[1].toFixed(4)}]`} />
+              {state.results?.mc && (
+                <>
+                  <DR label="Prix (Monte Carlo)" value={`${state.results.mc.price.toFixed(4)} $`} highlight />
+                  {state.results.mc.std_error !== null && (
+                    <DR label="Std Error MC" value={`±${state.results.mc.std_error.toFixed(4)}`} />
+                  )}
+                  {state.results.mc.ci_95 && (
+                    <DR label="IC 95%" value={`[${state.results.mc.ci_95[0].toFixed(4)}, ${state.results.mc.ci_95[1].toFixed(4)}]`} />
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -292,29 +286,58 @@ export function ExoticsTab() {
           {state.price_paths.length > 0 && (
             <div className="border border-[#222222] flex flex-col flex-1 min-h-[180px]">
               <div className="flex items-center justify-between px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-                <span className="font-bold text-white">▼ TRAJECTOIRES GBM</span>
+                <span className="font-bold text-white"> TRAJECTOIRES GBM</span>
                 <div className="flex gap-3 text-[9px] text-[#888888]">
-                  <span className="flex items-center gap-1"><span className="text-[#FFCC00]">—</span> Moyenne</span>
-                  <span className="flex items-center gap-1"><span className="text-[#4A90E2]">—</span> Paths</span>
+                  <span className="flex items-center gap-1"><span className="text-[#FFCC00]"></span> Moyenne</span>
+                  <span className="flex items-center gap-1"><span className="text-[#4A90E2]"></span> Paths</span>
                 </div>
               </div>
               <div className="flex-1 bg-[#0A0A0A] p-1">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={state.price_paths} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                    <CartesianGrid stroke="#1A1A1A" vertical={false} />
-                    <XAxis dataKey="step" stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }} />
-                    <YAxis stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }} domain={['auto', 'auto']} />
-                    {state.S && <ReferenceLine y={state.S} stroke="#FF4444" strokeDasharray="4 4" />}
-                    {state.K && <ReferenceLine y={state.K} stroke="#888888" strokeDasharray="2 4" />}
-                    {Array.from({ length: numPaths }).map((_, i) => (
-                      <Line key={i} type="monotone" dataKey={`path_${i}`}
-                        stroke="#4A90E2" strokeOpacity={0.15} strokeWidth={1}
-                        dot={false} isAnimationActive={false} />
-                    ))}
-                    <Line type="monotone" dataKey="avg" stroke="#FFCC00" strokeWidth={2}
-                      dot={false} isAnimationActive={false} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <Plot
+                  data={[
+                    ...Array.from({ length: numPaths }).map((_, i) => ({
+                      x: state.price_paths.map(p => p.step),
+                      y: state.price_paths.map(p => p[`path_${i}`]),
+                      type: 'scatter' as const,
+                      mode: 'lines' as const,
+                      line: { color: '#4A90E2', width: 1 },
+                      opacity: 0.15,
+                      hoverinfo: 'skip' as const,
+                      showlegend: false
+                    })),
+                    {
+                      x: state.price_paths.map(p => p.step),
+                      y: state.price_paths.map(p => p.avg),
+                      type: 'scatter' as const,
+                      mode: 'lines' as const,
+                      line: { color: '#FFCC00', width: 2 },
+                      name: 'Moyenne',
+                      showlegend: false
+                    }
+                  ]}
+                  layout={{
+                    autosize: true,
+                    margin: { l: 40, r: 20, t: 10, b: 30 },
+                    paper_bgcolor: 'transparent',
+                    plot_bgcolor: 'transparent',
+                    xaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                    yaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                    shapes: [
+                      ...(state.S ? [{
+                        type: 'line' as const, xref: 'paper' as const, x0: 0, x1: 1,
+                        y0: state.S, y1: state.S,
+                        line: { color: '#FF4444', dash: 'dash' as const, width: 1 }
+                      }] : []),
+                      ...(state.K ? [{
+                        type: 'line' as const, xref: 'paper' as const, x0: 0, x1: 1,
+                        y0: state.K, y1: state.K,
+                        line: { color: '#888888', dash: 'dashdot' as const, width: 1 }
+                      }] : [])
+                    ]
+                  }}
+                  style={{ width: '100%', height: '100%' }}
+                  useResizeHandler={true}
+                />
               </div>
             </div>
           )}
@@ -326,25 +349,36 @@ export function ExoticsTab() {
         <div className="flex gap-1 flex-1 min-h-[180px]">
           <div className="flex-1 border border-[#222222] flex flex-col">
             <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-              <span className="font-bold text-white">▼ DISTRIBUTION DES PAYOFFS</span>
+              <span className="font-bold text-white"> DISTRIBUTION DES PAYOFFS</span>
             </div>
             <div className="flex-1 bg-[#0A0A0A] p-1">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={state.payoff_distribution} margin={{ top: 5, right: 5, left: -20, bottom: 15 }}>
-                  <CartesianGrid stroke="#1A1A1A" vertical={false} />
-                  <XAxis dataKey="bucket" stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }}
-                    label={{ value: 'Payoff ($)', position: 'insideBottom', offset: -10, fill: '#888888', fontSize: 9 }} />
-                  <YAxis stroke="#333333" tick={{ fill: '#888888', fontSize: 9 }} />
-                  <Bar dataKey="count" fill="#4A90E2" opacity={0.6} />
-                </BarChart>
-              </ResponsiveContainer>
+              <Plot
+                data={[
+                  {
+                    x: state.payoff_distribution.map(d => d.bucket),
+                    y: state.payoff_distribution.map(d => d.count),
+                    type: 'bar',
+                    marker: { color: '#4A90E2', opacity: 0.6 }
+                  }
+                ]}
+                layout={{
+                  autosize: true,
+                  margin: { l: 40, r: 20, t: 10, b: 30 },
+                  paper_bgcolor: 'transparent',
+                  plot_bgcolor: 'transparent',
+                  xaxis: { title: { text: 'Payoff ($)', font: { size: 9, color: '#888' } }, gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                  yaxis: { gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } }
+                }}
+                style={{ width: '100%', height: '100%' }}
+                useResizeHandler={true}
+              />
             </div>
           </div>
         </div>
       )}
 
       {/* État vide */}
-      {state.price === null && !state.loading && !state.error && (
+      {state.results === null && !state.loading && !state.error && (
         <div className="flex-1 flex items-center justify-center text-[#888888] text-[12px]">
           Configurez les paramètres et cliquez sur "Calculer"
         </div>

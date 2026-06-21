@@ -1,8 +1,5 @@
 import React, { useState, useRef } from 'react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  ResponsiveContainer, ReferenceLine, Tooltip,
-} from 'recharts';
+import Plot from 'react-plotly.js';
 import { useMarket } from '../App';
 
 interface SmilePoint { strike: number; iv: number; type: string; }
@@ -34,11 +31,11 @@ export function SmileTab() {
     setState(s => ({ ...s, loading: true, error: null }));
 
     try {
-      if (!window.eel) {
+      if (!(window as any).eel) {
         setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
         return;
       }
-      const res = await window.eel.calculate_smile(ticker, expiry)();
+      const res = await (window as any).eel.calculate_smile(ticker, expiry)();
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
         return;
@@ -74,13 +71,13 @@ export function SmileTab() {
   return (
     <div className="flex flex-col h-full gap-1 p-1 overflow-auto bg-[#000000]">
       {state.error && (
-        <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] rounded">⚠ {state.error}</div>
+        <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] rounded">Warning {state.error}</div>
       )}
 
       {/* Contrôles */}
       <div className="border border-[#222222]">
         <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222] gap-6">
-          <span className="font-bold text-white">▼ SMILE DE VOLATILITÉ IMPLICITE</span>
+          <span className="font-bold text-white"> SMILE DE VOLATILITÉ IMPLICITE</span>
           <div className="flex gap-3 items-center">
             <label className="text-[#888888]">Ticker :</label>
             <input ref={tickerRef} defaultValue={market.ticker}
@@ -90,7 +87,7 @@ export function SmileTab() {
               className="bg-[#121212] border border-[#333333] text-white py-0.5 px-1 text-[11px] outline-none" />
             <button id="smile-calc-btn" onClick={handleCalculate} disabled={state.loading}
               className="bg-[#4A90E2] text-white px-3 py-0.5 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
-              {state.loading ? '⏳ Calcul...' : 'Calculer Smile IV'}
+              {state.loading ? 'Loading Calcul...' : 'Calculer Smile IV'}
             </button>
           </div>
           {state.expiry_used && (
@@ -102,11 +99,11 @@ export function SmileTab() {
       {/* Graphique smile */}
       <div className="flex-1 border border-[#222222] flex flex-col min-h-[300px]">
         <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222] justify-between">
-          <span className="font-bold text-white">▼ COURBE SMILE IV (Volatilité Implicite vs Strike)</span>
+          <span className="font-bold text-white"> COURBE SMILE IV (Volatilité Implicite vs Strike)</span>
           <div className="flex gap-4 text-[9px] text-[#888888]">
             <span className="flex items-center gap-1"><span className="inline-block w-6 border-t border-[#4A90E2]"></span>IV Interpolée</span>
-            <span className="flex items-center gap-1"><span className="text-[#00FF00]">●</span>Calls (brut)</span>
-            <span className="flex items-center gap-1"><span className="text-[#FF4444]">●</span>Puts (brut)</span>
+            <span className="flex items-center gap-1"><span className="text-[#00FF00]">*</span>Calls (brut)</span>
+            <span className="flex items-center gap-1"><span className="text-[#FF4444]">*</span>Puts (brut)</span>
           </div>
         </div>
         <div className="bg-[#0A0A0A] flex-1 p-3">
@@ -115,67 +112,59 @@ export function SmileTab() {
               Entrez un ticker et une maturité puis calculez le smile
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart margin={{ top: 10, right: 20, left: 0, bottom: 30 }}>
-                <CartesianGrid stroke="#1A1A1A" vertical={false} />
-                <XAxis
-                  dataKey="strike"
-                  type="number"
-                  domain={['dataMin', 'dataMax']}
-                  stroke="#444444"
-                  tick={{ fill: '#888888', fontSize: 9 }}
-                  label={{ value: 'Strike (K)', position: 'insideBottom', fill: '#888888', fontSize: 10, offset: -15 }}
-                />
-                <YAxis
-                  stroke="#444444"
-                  tick={{ fill: '#888888', fontSize: 9 }}
-                  tickFormatter={(v) => `${v.toFixed(0)}%`}
-                  label={{ value: 'IV (%)', angle: -90, position: 'insideLeft', fill: '#888888', fontSize: 10 }}
-                />
-                <Tooltip
-                  contentStyle={{ background: '#111', border: '1px solid #333', fontSize: 10 }}
-                  formatter={(v: any) => `${Number(v).toFixed(2)}%`}
-                />
-                {/* Ligne spot */}
-                {state.current_price && (
-                  <ReferenceLine
-                    x={state.current_price}
-                    stroke="#FF4444" strokeDasharray="3 3"
-                    label={{ value: `S=${state.current_price}`, position: 'top', fill: '#FF4444', fontSize: 9 }}
-                  />
-                )}
-                {/* Courbe interpolée */}
-                <Line
-                  data={chartData}
-                  dataKey="iv"
-                  stroke="#4A90E2"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                  name="IV Interpolée"
-                />
-                {/* Points calls bruts */}
-                <Line
-                  data={rawCallData}
-                  dataKey="raw"
-                  stroke="#00FF00"
-                  strokeWidth={0}
-                  dot={{ fill: '#00FF00', r: 3 }}
-                  isAnimationActive={false}
-                  name="Calls (brut)"
-                />
-                {/* Points puts bruts */}
-                <Line
-                  data={rawPutData}
-                  dataKey="raw"
-                  stroke="#FF4444"
-                  strokeWidth={0}
-                  dot={{ fill: '#FF4444', r: 3 }}
-                  isAnimationActive={false}
-                  name="Puts (brut)"
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <Plot
+              data={[
+                {
+                  x: chartData.map(d => d.strike),
+                  y: chartData.map(d => d.iv),
+                  type: 'scatter' as const,
+                  mode: 'lines' as const,
+                  line: { color: '#4A90E2', width: 2, shape: 'linear' },
+                  name: 'IV Interpolée'
+                },
+                {
+                  x: rawCallData.map(d => d.strike),
+                  y: rawCallData.map(d => d.raw),
+                  type: 'scatter' as const,
+                  mode: 'markers' as const,
+                  marker: { color: '#00FF00', size: 6 },
+                  name: 'Calls (brut)'
+                },
+                {
+                  x: rawPutData.map(d => d.strike),
+                  y: rawPutData.map(d => d.raw),
+                  type: 'scatter' as const,
+                  mode: 'markers' as const,
+                  marker: { color: '#FF4444', size: 6 },
+                  name: 'Puts (brut)'
+                }
+              ]}
+              layout={{
+                autosize: true,
+                margin: { l: 40, r: 20, t: 10, b: 30 },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                xaxis: { title: { text: 'Strike (K)', font: { size: 10, color: '#888' } }, gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 } },
+                yaxis: { title: { text: 'IV (%)', font: { size: 10, color: '#888' } }, gridcolor: '#1A1A1A', tickfont: { color: '#888', size: 9 }, ticksuffix: '%' },
+                hovermode: 'x unified',
+                shapes: [
+                  ...(state.current_price ? [{
+                    type: 'line' as const, xref: 'x' as const, yref: 'paper' as const, x0: state.current_price, x1: state.current_price,
+                    y0: 0, y1: 1,
+                    line: { color: '#FF4444', dash: 'dash' as const, width: 1 }
+                  }] : [])
+                ],
+                annotations: [
+                  ...(state.current_price ? [{
+                    x: state.current_price, y: 1, xref: 'x' as const, yref: 'paper' as const,
+                    text: `S=${state.current_price.toFixed(2)}`, showarrow: false, yanchor: 'bottom', font: { color: '#FF4444', size: 9 }
+                  }] : [])
+                ],
+                showlegend: false
+              }}
+              style={{ width: '100%', height: '100%' }}
+              useResizeHandler={true}
+            />
           )}
         </div>
       </div>
@@ -184,7 +173,7 @@ export function SmileTab() {
       {allRaw.length > 0 && (
         <div className="border border-[#222222]">
           <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-            <span className="font-bold text-white">▼ DONNÉES BRUTES — IV PAR STRIKE</span>
+            <span className="font-bold text-white"> DONNÉES BRUTES  IV PAR STRIKE</span>
             <span className="ml-2 text-[#888888]">({allRaw.length} points)</span>
           </div>
           <div className="bg-[#000000] overflow-auto max-h-[180px]">
