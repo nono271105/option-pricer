@@ -153,8 +153,11 @@ class TestMarketDataStore:
         assert store.ticker == "AAPL"
 
     def test_subscriber_error_does_not_crash(self):
+        def bad_subscriber(s):
+            raise ZeroDivisionError("intentional error to test resilience")
+
         store = MarketDataStore()
-        store.subscribe(lambda s: 1/0)  # division by zero
+        store.subscribe(bad_subscriber)
         healthy_calls = []
         store.subscribe(lambda s: healthy_calls.append(s.S))
         store.update(S=42.0)  # should not raise
