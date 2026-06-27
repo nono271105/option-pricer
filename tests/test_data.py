@@ -255,7 +255,10 @@ class TestYfinanceConnectivity:
         """Tous les prix de clôture doivent être strictement positifs."""
         ticker = yf.Ticker(TEST_TICKER_VALID)
         hist   = ticker.history(period="5d")
-        assert (hist["Close"] > 0).all(), "Des prix de clôture nuls ou négatifs détectés."
+        # yfinance peut retourner NaN pour le dernier jour (données non encore finalisées)
+        close = hist["Close"].dropna()
+        assert not close.empty, "Aucun prix de clôture disponible."
+        assert (close > 0).all(), "Des prix de clôture nuls ou négatifs détectés."
 
     def test_yfinance_invalid_ticker_returns_empty(self):
         """Un ticker inexistant ne doit pas lever d'exception mais retourner un DataFrame vide."""
@@ -288,10 +291,13 @@ class TestYfinancePriceData:
         assert dates == sorted(dates), "Les dates de l'historique yfinance ne sont pas triées."
 
     def test_history_no_null_close_prices(self):
-        """Aucun prix de clôture ne doit être NaN sur 1 mois."""
+        """Aucun prix de clôture intérieur ne doit être NaN sur 1 mois."""
         ticker    = yf.Ticker(TEST_TICKER_VALID)
         hist      = ticker.history(period="1mo")
-        null_count = hist["Close"].isna().sum()
+        # On exclut le dernier enregistrement : yfinance peut retourner NaN
+        # pour le jour le plus récent si les données ne sont pas encore finalisées.
+        interior  = hist["Close"].iloc[:-1]
+        null_count = interior.isna().sum()
         assert null_count == 0, f"{null_count} valeur(s) NaN détectée(s) dans les prix de clôture."
 
     def test_history_latest_date_recent(self):

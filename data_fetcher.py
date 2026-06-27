@@ -1,3 +1,4 @@
+from pandas.core.tools import datetimes
 import yfinance as yf
 import requests
 from datetime import datetime
@@ -5,7 +6,7 @@ from dotenv import load_dotenv
 import os
 import numpy as np
 from typing import Optional, Tuple
-from cache import global_cache
+from cache import global_cache_price, global_cache_chain, global_cache_static
 
 load_dotenv()
 
@@ -31,8 +32,7 @@ class DataFetcher:
         Returns:
             str: Symbole OCC formaté
         """
-        from datetime import datetime as dt
-        exp = dt.strptime(expiration_date, "%Y-%m-%d")
+        exp = datetime.strptime(expiration_date, "%Y-%m-%d")
         date_part = exp.strftime("%y%m%d")
         side = "C" if option_type.lower() == "call" else "P"
         strike_int = int(strike * 1000)
@@ -70,7 +70,7 @@ class DataFetcher:
         occ_symbol = self.build_occ_symbol(ticker, expiration_date, strike, option_type)
 
         cache_key = f"mktdata_hist_{occ_symbol}_{history_days}"
-        cached = global_cache.get(cache_key)
+        cached = global_cache_chain.get(cache_key)
         if cached is not None:
             return cached
 
@@ -120,7 +120,7 @@ class DataFetcher:
                 "occ_symbol": occ_symbol,
             }
 
-            global_cache.set(cache_key, result)
+            global_cache_chain.set(cache_key, result)
             return result
 
         except requests.exceptions.RequestException as e:
@@ -134,7 +134,7 @@ class DataFetcher:
         """Récupère le prix en direct du dernier jour de trading."""
         # cache consulté en premier pour éviter un appel réseau inutile
         cache_key = f"live_price_{ticker_symbol}"
-        cached_price = global_cache.get(cache_key)
+        cached_price = global_cache_price.get(cache_key)
         if cached_price is not None:
             return cached_price
         
@@ -144,7 +144,7 @@ class DataFetcher:
             if not todays_data.empty:
                 price = float(todays_data['Close'].iloc[-1])
                 # on met en cache avant de retourner
-                global_cache.set(cache_key, price)
+                global_cache_price.set(cache_key, price)
                 return price
             return None
         except Exception as e:
@@ -155,7 +155,7 @@ class DataFetcher:
         """Récupère la volatilité historique annualisée."""
         # même logique de cache
         cache_key = f"vol_{ticker_symbol}_{period}"
-        cached_vol = global_cache.get(cache_key)
+        cached_vol = global_cache_static.get(cache_key)
         if cached_vol is not None:
             return cached_vol
         
@@ -172,7 +172,7 @@ class DataFetcher:
             
             annual_volatility = returns.std() * np.sqrt(252)
             # on met en cache avant de retourner
-            global_cache.set(cache_key, annual_volatility)
+            global_cache_static.set(cache_key, annual_volatility)
             return annual_volatility
         except Exception as e:
             print(f"Erreur lors de la récupération de la volatilité historique pour {ticker_symbol}: {e}")
@@ -187,7 +187,7 @@ class DataFetcher:
         """
         # le SOFR varie peu en 1h, le cache est particulièrement adapté ici
         cache_key = "sofr_rate"
-        cached_rate = global_cache.get(cache_key)
+        cached_rate = global_cache_static.get(cache_key)
         if cached_rate is not None:
             return cached_rate
         
@@ -203,7 +203,7 @@ class DataFetcher:
                 sofr_value = float(latest_observation['value'])
                 sofr_decimal = sofr_value / 100.0
                 # on met en cache avant de retourner
-                global_cache.set(cache_key, sofr_decimal)
+                global_cache_static.set(cache_key, sofr_decimal)
                 return sofr_decimal
             else:
                 print("Aucune observation SOFR trouvée dans la réponse de l'API.")
@@ -229,7 +229,7 @@ class DataFetcher:
             float: Rendement de dividende annuel décimalisé (défaut: 0.0)
         """
         cache_key = f"dividend_{ticker_symbol}"
-        cached_div = global_cache.get(cache_key)
+        cached_div = global_cache_static.get(cache_key)
         if cached_div is not None:
             return cached_div
 
@@ -269,7 +269,7 @@ class DataFetcher:
             print(f"Erreur lors de la récupération du rendement de dividende pour {ticker_symbol}: {e}")
             result = 0.0
 
-        global_cache.set(cache_key, result)
+        global_cache_static.set(cache_key, result)
         return result
 
     def get_company_name(self, ticker_symbol: str) -> Optional[str]:
@@ -284,7 +284,7 @@ class DataFetcher:
         """
         # même logique de cache
         cache_key = f"company_name_{ticker_symbol}"
-        cached_name = global_cache.get(cache_key)
+        cached_name = global_cache_static.get(cache_key)
         if cached_name is not None:
             return cached_name
         
@@ -293,7 +293,7 @@ class DataFetcher:
             info = ticker.info
             company_name = info.get("longName") or info.get("shortName") or ticker_symbol
             # on met en cache avant de retourner
-            global_cache.set(cache_key, company_name)
+            global_cache_static.set(cache_key, company_name)
             return company_name
         except Exception as e:
             print(f"Erreur lors de la récupération du nom de la société pour {ticker_symbol}: {e}")

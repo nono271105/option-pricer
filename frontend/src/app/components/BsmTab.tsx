@@ -14,6 +14,7 @@ interface BsmState {
   price: number | null;
   greeks: Greeks | null;
   payoff_data: PricePoint[];
+  allGreekData: Record<GreekKey, GreekPoint[]>;
   activeGreekData: GreekPoint[];
   activeGreek: GreekKey;
   breakeven: number | null;
@@ -40,7 +41,9 @@ export function BsmTab() {
 
   const [state, setState] = useState<BsmState>({
     price: null, greeks: null,
-    payoff_data: [], activeGreekData: [],
+    payoff_data: [],
+    allGreekData: { delta: [], gamma: [], theta: [], vega: [], rho: [] },
+    activeGreekData: [],
     activeGreek: 'delta',
     breakeven: null, S: null, K: null,
     loading: false, error: null,
@@ -81,42 +84,41 @@ export function BsmTab() {
         return;
       }
 
-      // Met à jour la courbe du grec actif
+      // Stocke toutes les courbes grecques reçues en une seule fois
+      const allGreekData: Record<GreekKey, GreekPoint[]> = {
+        delta: (res as any).delta_data || [],
+        gamma: (res as any).gamma_data || [],
+        theta: (res as any).theta_data || [],
+        vega:  (res as any).vega_data  || [],
+        rho:   (res as any).rho_data   || [],
+      };
       const greekKey = state.activeGreek;
-      const greekData = (res as any)[`${greekKey}_data`] as GreekPoint[] || [];
 
       setState(s => ({
         ...s, loading: false, error: null,
         price: res.price,
         greeks: res.greeks,
         payoff_data: res.payoff_data,
-        activeGreekData: greekData,
+        allGreekData,
+        activeGreekData: allGreekData[greekKey],
         breakeven: res.breakeven,
         S: res.S,
         K: res.K,
-        sigma: res.sigma,
-        sigma_source: res.sigma_source,
+        sigma: (res as any).sigma,
+        sigma_source: (res as any).sigma_source,
       }));
     } catch (e: any) {
       setState(s => ({ ...s, loading: false, error: String(e) }));
     }
   };
 
-  // ── Changement de grec affiché ───────────────────────────────────────
-
-  const switchGreek = async (key: GreekKey) => {
-    setState(s => ({ ...s, activeGreek: key }));
-    if (!window.eel || !state.S || !state.K) return;
-    try {
-      const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
-      const matStr = maturityRef.current?.value || '';
-      const optType = optTypeRef.current?.value || 'call';
-      const position = positionRef.current?.value || 'long';
-      const res = await window.eel.calculate_bsm(ticker, state.S, state.K, matStr, market.r, market.q, optType, position)();
-      if (!res.error) {
-        setState(s => ({ ...s, activeGreek: key, activeGreekData: (res as any)[`${key}_data`] || [] }));
-      }
-    } catch { /* silencieux */ }
+  // Changement de grec affiché — synchrone, toutes les données sont déjà en state
+  const switchGreek = (key: GreekKey) => {
+    setState(s => ({
+      ...s,
+      activeGreek: key,
+      activeGreekData: s.allGreekData[key],
+    }));
   };
 
   const formatGreek = (val: number | undefined, digits = 4) =>
