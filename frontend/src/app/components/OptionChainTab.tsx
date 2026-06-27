@@ -20,6 +20,14 @@ interface ChainState {
   error: string | null;
 }
 
+// Formate une date YYYY-MM-DD en DD/MM/YYYY
+function formatDateFR(dateStr: string): string {
+  if (!dateStr) return dateStr;
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
 export function OptionChainTab() {
   const market = useMarket();
   const tickerRef = useRef<HTMLInputElement>(null);
@@ -105,7 +113,7 @@ export function OptionChainTab() {
         <div className="flex items-center gap-3">
           <span className="font-bold text-white"> OPTION CHAIN</span>
           {state.expiry_used && (
-            <span className="text-[#FFCC00]">Échéance : {state.expiry_used}</span>
+            <span className="text-[#FFCC00]">Échéance : {formatDateFR(state.expiry_used)}</span>
           )}
           {spotPrice && (
             <span className="text-[#888888]">Spot : <span className="text-[#00FF00]">{spotPrice.toFixed(2)}</span></span>
@@ -122,7 +130,7 @@ export function OptionChainTab() {
               className="bg-[#121212] border border-[#333333] text-white px-1.5 py-0.5 text-[10px] outline-none appearance-none"
             >
               {state.expiries.map(e => (
-                <option key={e} value={e}>{e}</option>
+                <option key={e} value={e}>{formatDateFR(e)}</option>
               ))}
             </select>
           ) : (

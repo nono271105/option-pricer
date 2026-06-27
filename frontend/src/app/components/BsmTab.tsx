@@ -122,6 +122,11 @@ export function BsmTab() {
   const formatGreek = (val: number | undefined, digits = 4) =>
     val !== undefined ? val.toFixed(digits) : 'N/C';
 
+  // Le vega retourné par le backend est en unités de 1% de vol (convention Bloomberg),
+  // on divise par 100 pour afficher en unités de vol (0.XXXX)
+  const formatVega = (val: number | undefined) =>
+    val !== undefined ? (val / 100).toFixed(4) : 'N/C';
+
   const greekColor = (val: number | undefined) => {
     if (val === undefined) return 'text-[#888888]';
     return val >= 0 ? 'text-[#00FF00]' : 'text-[#FF3333]';
@@ -250,7 +255,7 @@ export function BsmTab() {
                       {formatGreek(state.greeks?.theta)}
                     </td>
                     <td className={`py-1.5 px-2 ${greekColor(state.greeks?.vega)}`}>
-                      {formatGreek(state.greeks?.vega)}
+                      {formatVega(state.greeks?.vega)}
                     </td>
                     <td className="py-1.5 px-2 text-[#D4D4D4]">
                       {formatGreek(state.greeks?.rho)}

@@ -99,6 +99,8 @@ export function CrrTab() {
   };
 
   const fmtG = (v?: number, d = 4) => v !== undefined ? v.toFixed(d) : 'N/C';
+  // Le vega du backend est en unités de 1% de vol, on divise par 100
+  const fmtVega = (v?: number) => v !== undefined ? (v / 100).toFixed(4) : 'N/C';
   const gc = (v?: number) => !v ? 'text-[#888888]' : v >= 0 ? 'text-[#00FF00]' : 'text-[#FF3333]';
   const defaultStrike = market.S ? Math.round(market.S) : 290;
   const defaultMat    = getDefaultMaturity();
@@ -196,7 +198,7 @@ export function CrrTab() {
                     <td className={`py-1.5 px-2 ${gc(state.greeks?.delta)}`}>{fmtG(state.greeks?.delta)}</td>
                     <td className="py-1.5 px-2 text-[#D4D4D4]">{fmtG(state.greeks?.gamma)}</td>
                     <td className={`py-1.5 px-2 ${gc(state.greeks?.theta)}`}>{fmtG(state.greeks?.theta)}</td>
-                    <td className={`py-1.5 px-2 ${gc(state.greeks?.vega)}`}>{fmtG(state.greeks?.vega)}</td>
+                    <td className={`py-1.5 px-2 ${gc(state.greeks?.vega)}`}>{fmtVega(state.greeks?.vega)}</td>
                     <td className="py-1.5 px-2 text-[#D4D4D4]">{fmtG(state.greeks?.rho)}</td>
                   </tr>
                 </tbody>

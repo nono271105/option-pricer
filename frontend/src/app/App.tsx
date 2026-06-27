@@ -62,7 +62,7 @@ async function callEel<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 // ── Onglets ───────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'chains',     label: 'Option Chains' },
+  { id: 'chains',     label: 'Option Chain' },
   { id: 'bsm',        label: 'Modèle BSM' },
   { id: 'crr',        label: 'Modèle CRR' },
   { id: 'simulation', label: 'Simulation' },
@@ -76,7 +76,7 @@ const TABS = [
 // ── Composant principal ───────────────────────────────────────────────────
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('bsm');
+  const [activeTab, setActiveTab] = useState('chains');
   const [market, setMarket] = useState<MarketState>(DEFAULT_MARKET);
   const [tickerInput, setTickerInput] = useState('AAPL');
 
@@ -135,7 +135,6 @@ export default function App() {
                 <span className="text-[#FF4444] text-[9px]">{market.error}</span>
               )}
               <span className="bg-[#FF3333] text-white px-1 font-bold">ARMED</span>
-              <span className="text-[#888888]">Help</span>
             </div>
           </div>
 
@@ -163,11 +162,6 @@ export default function App() {
                   {market.isLoading ? 'Chargement...' : 'Actualiser'}
                 </button>
               </div>
-              {market.companyName && (
-                <span className="text-[9px] text-[#FFCC00] mt-0.5 truncate max-w-[150px]">
-                  {market.companyName}
-                </span>
-              )}
             </div>
 
             {/* Prix spot */}
@@ -201,6 +195,16 @@ export default function App() {
                 {(market.histVol * 100).toFixed(2)}%
               </span>
             </div>
+
+            {/* Nom de la société — affiché après la vol. hist. */}
+            {market.companyName && (
+              <div className="flex flex-col items-end">
+                <span className="text-[9px] text-[#888888] mb-0.5">Société</span>
+                <span className="text-[9px] text-[#FFCC00] font-bold truncate max-w-[180px]">
+                  {market.companyName}
+                </span>
+              </div>
+            )}
 
           </div>
         </div>
