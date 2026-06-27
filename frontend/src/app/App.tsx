@@ -207,7 +207,7 @@ export default function App() {
               </span>
             </div>
 
-            {/* Nom de la société — affiché après la vol. hist. */}
+            {/* Nom de la société : affiché après la vol. hist. */}
             {market.companyName && (
               <div className="flex flex-col items-end">
                 <span className="text-[9px] text-[#888888] mb-0.5">Société</span>

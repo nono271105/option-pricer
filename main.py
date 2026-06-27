@@ -1,5 +1,5 @@
 """
-main.py — Point d'entrée de l'application Eel (React + Python).
+main.py : Point d'entrée de l'application Eel (React + Python).
 
 Usage :
     # Mode production (charge le dossier dist/ compilé)
@@ -21,7 +21,7 @@ logging.basicConfig(
 )
 
 # Importe toutes les fonctions @eel.expose du pont API
-import api  # noqa: F401  — les décorateurs @eel.expose s'enregistrent à l'import
+import api  # noqa: F401  : les décorateurs @eel.expose s'enregistrent à l'import
 
 
 def main() -> None:

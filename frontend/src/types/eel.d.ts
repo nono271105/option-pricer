@@ -1,5 +1,5 @@
 /**
- * eel.d.ts — Déclarations TypeScript pour window.eel
+ * eel.d.ts : Déclarations TypeScript pour window.eel
  *
  * Eel injecte un objet `eel` dans window qui expose les fonctions Python
  * décorées avec @eel.expose. Chaque appel retourne une Promise via la syntaxe :

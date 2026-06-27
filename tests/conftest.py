@@ -9,7 +9,7 @@ def pytest_configure(config):
     """Déclare les marqueurs personnalisés."""
     config.addinivalue_line(
         "markers",
-        "slow: marque les tests lents (Monte Carlo) — exclure avec '-m \"not slow\"'",
+        "slow: marque les tests lents (Monte Carlo) : exclure avec '-m \"not slow\"'",
     )
 
 

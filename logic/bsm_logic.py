@@ -93,14 +93,14 @@ class OptionModels:
                     delta = 1.0
                 elif S < K:     # OTM
                     delta = 0.0
-                else:           # ATM — convention ±0.5
+                else:           # ATM : convention ±0.5
                     delta = 0.5
             else:  # put
                 if S < K:       # ITM
                     delta = -1.0
                 elif S > K:     # OTM
                     delta = 0.0
-                else:           # ATM — convention ±0.5
+                else:           # ATM : convention ±0.5
                     delta = -0.5
             return {'delta': delta, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0, 'rho': 0.0}
             

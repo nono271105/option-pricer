@@ -204,7 +204,7 @@ class ImpliedVolatilitySurface:
         K_min = current_price * MONEYNESS_MIN
         K_max = current_price * MONEYNESS_MAX
         logger.info(
-            "Filtre moneyness: K ∈ [%.1f, %.1f] (%.0f%% — %.0f%% du spot)",
+            "Filtre moneyness: K ∈ [%.1f, %.1f] (%.0f%% : %.0f%% du spot)",
             K_min, K_max, MONEYNESS_MIN * 100, MONEYNESS_MAX * 100,
         )
         
@@ -312,7 +312,7 @@ class ImpliedVolatilitySurface:
                 continue
         
         logger.info(
-            "Pipeline IV — Total: %d | Expiré: %d | Moneyness: -%d | "
+            "Pipeline IV : Total: %d | Expiré: %d | Moneyness: -%d | "
             "Liquidité: -%d | IV échouée: -%d | Accepté: %d",
             stats['total'], stats['expired'], stats['moneyness_filtered'],
             stats['liquidity_filtered'], stats['iv_failed'], stats['accepted'],
@@ -324,10 +324,10 @@ class ImpliedVolatilitySurface:
         
         df = pd.DataFrame(surface_data)
         logger.info("Données extraites: %s points", len(df))
-        logger.info("  Strikes: %.2f — %.2f", df['Strike'].min(), df['Strike'].max())
-        logger.info("  Maturité: %s — %s jours",
+        logger.info("  Strikes: %.2f : %.2f", df['Strike'].min(), df['Strike'].max())
+        logger.info("  Maturité: %s : %s jours",
                      df['Days_to_Maturity'].min(), df['Days_to_Maturity'].max())
-        logger.info("  IV: %.4f — %.4f (%.1f%% — %.1f%%)",
+        logger.info("  IV: %.4f : %.4f (%.1f%% : %.1f%%)",
                      df['IV'].min(), df['IV'].max(),
                      df['IV'].min() * 100, df['IV'].max() * 100)
         

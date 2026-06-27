@@ -268,7 +268,7 @@ class TestDataFetcher:
 
 
 # ============================================================================
-#  STRATEGY_MANAGER  (payoff, métriques, grecs — pas de réseau)
+#  STRATEGY_MANAGER  (payoff, métriques, grecs : pas de réseau)
 # ============================================================================
 
 class TestStrategyManager:
@@ -506,7 +506,7 @@ class TestForecastLogic:
         """Vérifie les dimensions des séries retournées.
 
         process_iv_forecast_results attend désormais un array 1D (horizon,)
-        directement — le découpage [0] est fait dans run_iv_forecast.
+        directement : le découpage [0] est fait dans run_iv_forecast.
         """
         horizon = 10
         iv_history = np.full(20, 0.25)
@@ -558,7 +558,7 @@ class TestForecastLogic:
         """Les IV négatives prédites doivent être bornées à 0.01 minimum."""
         horizon = 3
         iv_history = np.full(10, 0.20)
-        # IV négatives simulant un artefact du modèle — array 1D
+        # IV négatives simulant un artefact du modèle : array 1D
         iv_point_forecast = np.array([-0.05, 0.0, 0.10])
 
         iv_fc, opt_prices, _, _, _, _, _ = self.fl.process_iv_forecast_results(

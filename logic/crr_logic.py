@@ -4,7 +4,7 @@ from typing import Dict, Literal
 class CRRModels:
     """
     Modèle binomial Cox-Ross-Rubinstein pour options américaines.
-    Classe autonome — pas d'héritage de OptionModels.
+    Classe autonome : pas d'héritage de OptionModels.
     """
 
     def cox_ross_rubinstein_price(

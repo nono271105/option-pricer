@@ -21,7 +21,7 @@ from logic.exotic_options_logic import (
 )
 
 # ═══════════════════════════════════════════════════════════════════════════
-# GOLDEN VALUES — DerivaGem (John Hull)
+# GOLDEN VALUES : DerivaGem (John Hull)
 # ═══════════════════════════════════════════════════════════════════════════
 
 GOLDEN = {
@@ -450,7 +450,7 @@ class TestBarrierMC:
         naive = np.exp(-self._r * self._T) * np.where(~breached, intrinsic, 0.0).mean()
 
         assert adjusted != pytest.approx(naive, abs=0.05), (
-            f"BGK-adjusted ({adjusted:.4f}) ~= naive ({naive:.4f}) — correction inactive?"
+            f"BGK-adjusted ({adjusted:.4f}) ~= naive ({naive:.4f}) : correction inactive?"
         )
 
 

@@ -1,5 +1,5 @@
 """
-api.py — Pont Eel : expose toutes les fonctions Python au frontend React.
+api.py : Pont Eel : expose toutes les fonctions Python au frontend React.
 
 Chaque fonction décorée @eel.expose est appelable depuis TypeScript via :
     window.eel.nom_fonction(args)()
@@ -377,7 +377,7 @@ def calculate_crr(
 
         payoff_data = _payoff_curve(K, price, option_type, position, S)
 
-        # Courbes grecs (différences finies sur CRR — plus lent, N réduit)
+        # Courbes grecs (différences finies sur CRR : plus lent, N réduit)
         n_curve = min(N, 100)
         greek_curves = {}
         s_min, s_max = S * 0.6, S * 1.4

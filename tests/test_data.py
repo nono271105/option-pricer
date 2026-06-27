@@ -34,7 +34,7 @@ SOFR_REASONABLE_MAX = 0.25     # 25 %
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SECTION 1 : FRED API — SOFR
+# SECTION 1 : FRED API : SOFR
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestFREDApiKey:
@@ -412,7 +412,7 @@ class TestDataFetcherYfinance:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestIntegration:
-    """Tests croisés FRED + yfinance — scénarios de pricing réalistes."""
+    """Tests croisés FRED + yfinance : scénarios de pricing réalistes."""
 
     def test_sofr_and_live_price_both_available(self):
         """
@@ -422,8 +422,8 @@ class TestIntegration:
         fetcher = DataFetcher()
         sofr  = fetcher.get_sofr_rate()
         price = fetcher.get_live_price(TEST_TICKER_VALID)
-        assert sofr  is not None, "SOFR non disponible — impossible de pricer une option."
-        assert price is not None, "Prix spot non disponible — impossible de pricer une option."
+        assert sofr  is not None, "SOFR non disponible : impossible de pricer une option."
+        assert price is not None, "Prix spot non disponible : impossible de pricer une option."
         # Les deux valeurs doivent être dans des plages cohérentes
         assert 0 < sofr  < 1,     f"SOFR incohérent : {sofr}."
         assert price > 1,          f"Prix spot incohérent pour AAPL : {price}."
@@ -440,13 +440,13 @@ class TestIntegration:
         assert vol  is not None, "Volatilité historique non disponible."
         # Cohérence : le ratio vol/sofr doit être > 1 pour la plupart des actions
         assert vol > sofr, (
-            f"Volatilité ({vol:.4f}) inférieure au taux sans risque ({sofr:.4f}) — "
+            f"Volatilité ({vol:.4f}) inférieure au taux sans risque ({sofr:.4f}) : "
             "valeurs suspectes."
         )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SECTION 4 : marketdata.app — IV historique
+# SECTION 4 : marketdata.app : IV historique
 # ══════════════════════════════════════════════════════════════════════════════
 
 MARKET_DATA_TOKEN = os.getenv("MARKET_DATA_TOKEN")

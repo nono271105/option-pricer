@@ -149,7 +149,7 @@ export function StrategiesTab() {
       {/* ── Barre de sélection ── */}
       <div className="border border-[#222222] shrink-0">
         <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-          <span className="font-bold text-white"> STRATÉGIES — Sélection &amp; Analyse</span>
+          <span className="font-bold text-white"> STRATÉGIES : Sélection &amp; Analyse</span>
         </div>
         <div className="flex items-center gap-4 px-3 py-2 flex-wrap">
           <label className="flex items-center gap-1.5 text-[10px] text-[#888888]">
@@ -191,7 +191,7 @@ export function StrategiesTab() {
           {/* Tableau des legs */}
           <div className="flex-1 border border-[#222222]">
             <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-              <span className="font-bold text-white"> COMPOSITION — {state.strategy_name}</span>
+              <span className="font-bold text-white"> COMPOSITION : {state.strategy_name}</span>
             </div>
             <table className="w-full text-right border-collapse text-[11px]">
               <thead>
@@ -288,7 +288,7 @@ export function StrategiesTab() {
       {state.payoff_data.length > 0 && (
         <div className="flex-1 border border-[#222222] flex flex-col min-h-[250px]">
           <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
-            <span className="font-bold text-white"> PROFIL P&amp;L — {state.strategy_name}</span>
+            <span className="font-bold text-white"> PROFIL P&amp;L : {state.strategy_name}</span>
             <div className="ml-4 flex gap-4 text-[9px] text-[#666666]">
               <span className="flex items-center gap-1">
                 <span style={{ display: 'inline-block', width: 14, height: 2, background: '#4A90E2', borderRadius: 1 }} />

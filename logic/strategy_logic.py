@@ -154,7 +154,7 @@ class StrategyManager:
         Chaque leg contient : option_type, position, strike, premium (marché ou BSM).
 
         Returns:
-            Tuple (legs, T_effectif) — T_effectif aligné sur l'échéance de la chaîne si prime marché.
+            Tuple (legs, T_effectif) : T_effectif aligné sur l'échéance de la chaîne si prime marché.
         """
         definition = self.STRATEGY_DEFINITIONS.get(strategy_name)
         if definition is None:

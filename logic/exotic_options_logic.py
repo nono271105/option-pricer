@@ -76,7 +76,7 @@ def price_barrier_analytical(
     rebate: float = 0.0
 ) -> ExoticResult:
     """
-    Prix analytique d'une option barrière — Rubinstein & Reiner (1991).
+    Prix analytique d'une option barrière : Rubinstein & Reiner (1991).
 
     Implémentation exacte des formules du papier de Kotzé / Financial Chaos Theory.
 
@@ -100,7 +100,7 @@ def price_barrier_analytical(
         y1 = [ln(H/S)   + (r−d+σ²/2)τ] / (σ√τ)
         z  = [ln(H/S)   + bσ²τ]         / (σ√τ)
 
-    Table 1 — combinaisons pour chaque type (φ et η selon le type) :
+    Table 1 : combinaisons pour chaque type (φ et η selon le type) :
         Down-and-In  Call  K≥H : A+B       | Put  K≥H : D−A+E+B
         Down-and-In  Call  K<H : C−D+E+B  | Put  K<H : C+B
         Up-and-In    Call  K≥H : C+B       | Put  K≥H : C−D+E+B

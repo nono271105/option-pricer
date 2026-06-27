@@ -148,7 +148,7 @@ class ForecastLogic:
         # TimesFM retourne une liste de prévisions (une par input).
         # On n'envoie qu'une seule série (inputs=[iv_input]), donc on extrait [0].
         # np.array() sur la liste brute déclenche un warning "inhomogeneous shape"
-        # en NumPy 2.x — on extrait directement l'élément pour éviter ça.
+        # en NumPy 2.x : on extrait directement l'élément pour éviter ça.
         pf = np.asarray(point_forecast[0], dtype=np.float32).flatten()
         qf = np.asarray(quantile_forecast[0], dtype=np.float32) if quantile_forecast is not None else None
         return pf, qf, iv_history
