@@ -46,6 +46,16 @@ export const MarketContext = createContext<MarketContextValue>({
 
 export const useMarket = () => useContext(MarketContext);
 
+// ── Logger conditionnel : actif uniquement en mode développement ──────────
+
+const devLog = {
+  warn: (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+      console.warn(...args);
+    }
+  },
+};
+
 // ── Eel helper : appel avec fallback si eel n'est pas disponible ──────────
 
 async function callEel<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
@@ -54,10 +64,11 @@ async function callEel<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
       return await fn();
     }
   } catch (e) {
-    console.warn('[Eel] appel échoué:', e);
+    devLog.warn('[Eel] appel échoué:', e);
   }
   return fallback;
 }
+
 
 // ── Onglets ───────────────────────────────────────────────────────────────
 

@@ -30,3 +30,7 @@ Document/
 
 # Vite build output
 frontend/dist/
+
+# Polices propriétaires (non redistribuables — disponibles localement)
+frontend/*.ttf
+frontend/**/*.ttf
