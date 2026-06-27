@@ -1,4 +1,3 @@
-from pandas.core.tools import datetimes
 import yfinance as yf
 import requests
 from datetime import datetime

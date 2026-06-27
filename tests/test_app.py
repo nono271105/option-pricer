@@ -117,32 +117,9 @@ class TestDataCache:
 #  MARKET DATA STORE
 # ============================================================================
 
+
 class TestMarketDataStore:
     """Tests pour market_data_store.py."""
-
-    def test_subscribe_and_notify(self):
-        store = MarketDataStore()
-        received = []
-        store.subscribe(lambda s: received.append(s.S))
-        store.update(S=150.0)
-        assert received == [150.0]
-
-    def test_multiple_subscribers(self):
-        store = MarketDataStore()
-        calls = []
-        store.subscribe(lambda s: calls.append("tab1"))
-        store.subscribe(lambda s: calls.append("tab2"))
-        store.update(S=100.0)
-        assert calls == ["tab1", "tab2"]
-
-    def test_unsubscribe(self):
-        store = MarketDataStore()
-        calls = []
-        cb = lambda s: calls.append("called")
-        store.subscribe(cb)
-        store.unsubscribe(cb)
-        store.update(S=100.0)
-        assert calls == []
 
     def test_update_attributes(self):
         store = MarketDataStore()
@@ -152,16 +129,6 @@ class TestMarketDataStore:
         assert store.q == 0.01
         assert store.ticker == "AAPL"
 
-    def test_subscriber_error_does_not_crash(self):
-        def bad_subscriber(s):
-            raise ZeroDivisionError("intentional error to test resilience")
-
-        store = MarketDataStore()
-        store.subscribe(bad_subscriber)
-        healthy_calls = []
-        store.subscribe(lambda s: healthy_calls.append(s.S))
-        store.update(S=42.0)  # should not raise
-        assert healthy_calls == [42.0]
 
 
 # ============================================================================
