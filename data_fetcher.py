@@ -165,7 +165,7 @@ class DataFetcher:
                 return None
             
             # volatilité annualisée par écart-type des rendements quotidiens
-            returns = hist['Close'].pct_change().dropna()
+            returns = hist['Close'].pct_change(fill_method=None).dropna()
             if len(returns) < 2: 
                 return None
             

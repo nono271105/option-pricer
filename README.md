@@ -184,7 +184,7 @@ logic/    data_fetcher    cache.py    market_data_store
 
 ```Shell
 # 1. Cloner le dépôt
-git clone https://github.com/nono271105/option-pricer.git
+git clone -b react-migration https://github.com/nono271105/option-pricer.git
 cd option-pricer
 
 # 2. Environnement virtuel Python

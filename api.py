@@ -60,8 +60,10 @@ def _safe(val: Any) -> Any:
 
 
 def _greek_curve(S: float, K: float, T: float, r: float, sigma: float,
-                 q: float, option_type: str, greek: str) -> List[Dict]:
+                 q: float, option_type: str, greek: str,
+                 position: str = "long") -> List[Dict]:
     """Génère 100 points de la courbe d'un grec en fonction du spot."""
+    sign = 1 if position == "long" else -1
     s_min = S * 0.6
     s_max = S * 1.4
     spots = np.linspace(s_min, s_max, 100)
@@ -69,7 +71,7 @@ def _greek_curve(S: float, K: float, T: float, r: float, sigma: float,
     for s in spots:
         try:
             g = _option_models.calculate_greeks(s, K, T, r, sigma, q, option_type)
-            result.append({"spot": round(float(s), 2), "value": round(g[greek], 6)})
+            result.append({"spot": round(float(s), 2), "value": round(sign * g[greek], 6)})
         except Exception:
             result.append({"spot": round(float(s), 2), "value": None})
     return result
@@ -297,16 +299,19 @@ def calculate_bsm(
         price = _option_models.black_scholes_price(S, K, T, r, sigma, q, option_type)
         price = round(float(price), 4)
 
-        greeks = _option_models.calculate_greeks(S, K, T, r, sigma, q, option_type)
-        greeks = {k: round(float(v), 6) for k, v in greeks.items()}
+        # Grecs bruts de l'option, puis signe de la position appliqué
+        # (short = tous les grecs inversés)
+        raw_greeks = _option_models.calculate_greeks(S, K, T, r, sigma, q, option_type)
+        sign = 1 if position == "long" else -1
+        greeks = {k: round(sign * float(v), 6) for k, v in raw_greeks.items()}
 
         payoff_data = _payoff_curve(K, price, option_type, position, S)
 
-        # Courbes des grecs vs spot
+        # Courbes des grecs vs spot (signe de position inclus)
         greek_curves = {}
         for greek_name in ("delta", "gamma", "theta", "vega", "rho"):
             greek_curves[f"{greek_name}_data"] = _greek_curve(
-                S, K, T, r, sigma, q, option_type, greek_name
+                S, K, T, r, sigma, q, option_type, greek_name, position
             )
 
         # Point mort
@@ -372,8 +377,10 @@ def calculate_crr(
         price = _crr_models.cox_ross_rubinstein_price(S, K, T, r, q, sigma_used, N, option_type)
         price = round(float(price), 4)
 
-        greeks = _crr_models.calculate_greeks_crr(S, K, T, r, q, sigma_used, N, option_type)
-        greeks = {k: round(float(v), 6) for k, v in greeks.items()}
+        # Grecs bruts CRR, puis signe de la position appliqué
+        raw_greeks = _crr_models.calculate_greeks_crr(S, K, T, r, q, sigma_used, N, option_type)
+        sign = 1 if position == "long" else -1
+        greeks = {k: round(sign * float(v), 6) for k, v in raw_greeks.items()}
 
         payoff_data = _payoff_curve(K, price, option_type, position, S)
 
@@ -389,7 +396,7 @@ def calculate_crr(
                     g = _crr_models.calculate_greeks_crr(
                         float(s), K, T, r, q, sigma_used, n_curve, option_type
                     )
-                    curve.append({"spot": round(float(s), 2), "value": round(g[greek_name], 6)})
+                    curve.append({"spot": round(float(s), 2), "value": round(sign * g[greek_name], 6)})
                 except Exception:
                     curve.append({"spot": round(float(s), 2), "value": None})
             greek_curves[f"{greek_name}_data"] = curve
