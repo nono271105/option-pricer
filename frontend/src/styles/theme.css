@@ -84,8 +84,8 @@
   --radius-xl: var(--radius);
 
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-sans: "NM-Font", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-data: "NM-Font", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: Arial, Helvetica, sans-serif;
+  --font-data: Arial, Helvetica, sans-serif;
 }
 
 @layer base {
