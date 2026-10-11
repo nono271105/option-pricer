@@ -1,3 +1,4 @@
+import logging
 import yfinance as yf
 import requests
 from datetime import datetime
@@ -8,6 +9,8 @@ from typing import Optional, Tuple
 from cache import global_cache_price, global_cache_chain, global_cache_static
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class DataFetcher:
     def __init__(self) -> None:
@@ -63,7 +66,7 @@ class DataFetcher:
                             strike, expiration, updated. None en cas d'erreur.
         """
         if not self.market_data_token:
-            print("MARKET_DATA_TOKEN non configure dans le fichier .env.")
+            logger.warning("MARKET_DATA_TOKEN non configure dans le fichier .env.")
             return None
 
         occ_symbol = self.build_occ_symbol(ticker, expiration_date, strike, option_type)
@@ -88,7 +91,7 @@ class DataFetcher:
             data = response.json()
 
             if data.get("s") != "ok":
-                print(f"marketdata.app : pas de donnees pour {occ_symbol} ({data.get('s')})")
+                logger.warning("marketdata.app : pas de donnees pour %s (%s)", occ_symbol, data.get('s'))
                 return None
 
             # filtrage des points avec prix mid valide (non null, positif)
@@ -105,7 +108,7 @@ class DataFetcher:
             ]
 
             if not valid_indices:
-                print(f"Aucun prix mid valide pour {occ_symbol}.")
+                logger.warning("Aucun prix mid valide pour %s.", occ_symbol)
                 return None
 
             result = {
@@ -123,10 +126,10 @@ class DataFetcher:
             return result
 
         except requests.exceptions.RequestException as e:
-            print(f"Erreur HTTP marketdata.app pour {occ_symbol} : {e}")
+            logger.warning("Erreur HTTP marketdata.app pour %s : %s", occ_symbol, e)
             return None
         except Exception as e:
-            print(f"Erreur inattendue marketdata.app pour {occ_symbol} : {e}")
+            logger.warning("Erreur inattendue marketdata.app pour %s : %s", occ_symbol, e)
             return None
 
     def get_live_price(self, ticker_symbol: str) -> Optional[float]:
@@ -147,7 +150,7 @@ class DataFetcher:
                 return price
             return None
         except Exception as e:
-            print(f"Erreur lors de la récupération du prix en direct pour {ticker_symbol}: {e}")
+            logger.warning("Erreur prix en direct pour %s : %s", ticker_symbol, e)
             return None
 
     def get_historical_volatility(self, ticker_symbol: str, period: str = "1y") -> Optional[float]:
@@ -174,7 +177,7 @@ class DataFetcher:
             global_cache_static.set(cache_key, annual_volatility)
             return annual_volatility
         except Exception as e:
-            print(f"Erreur lors de la récupération de la volatilité historique pour {ticker_symbol}: {e}")
+            logger.warning("Erreur volatilité historique pour %s : %s", ticker_symbol, e)
             return None
 
     def get_sofr_rate(self) -> Optional[float]:
@@ -205,16 +208,16 @@ class DataFetcher:
                 global_cache_static.set(cache_key, sofr_decimal)
                 return sofr_decimal
             else:
-                print("Aucune observation SOFR trouvée dans la réponse de l'API.")
+                logger.warning("Aucune observation SOFR trouvée dans la réponse de l'API.")
                 return None
         except requests.exceptions.RequestException as e:
-            print(f"Erreur de requête HTTP lors de la récupération du SOFR : {e}")
+            logger.warning("Erreur HTTP SOFR : %s", e)
             return None
         except ValueError as e:
-            print(f"Erreur de parsing JSON ou de conversion de valeur pour le SOFR : {e}")
+            logger.warning("Erreur parsing SOFR : %s", e)
             return None
         except Exception as e:
-            print(f"Une erreur inattendue est survenue lors de la récupération du SOFR : {e}")
+            logger.warning("Erreur inattendue SOFR : %s", e)
             return None
 
     def get_dividend_yield(self, ticker_symbol: str) -> float:
@@ -260,12 +263,10 @@ class DataFetcher:
                 result = 0.0
 
         except (TypeError, ValueError) as e:
-            # Erreur lors de la conversion des valeurs en float
-            print(f"Données de dividende mal formatées pour {ticker_symbol}: {e}")
+            logger.warning("Données dividende mal formatées pour %s : %s", ticker_symbol, e)
             result = 0.0
         except Exception as e:
-            # Erreur réseau, ticker introuvable, etc.
-            print(f"Erreur lors de la récupération du rendement de dividende pour {ticker_symbol}: {e}")
+            logger.warning("Erreur dividende pour %s : %s", ticker_symbol, e)
             result = 0.0
 
         global_cache_static.set(cache_key, result)
@@ -295,7 +296,7 @@ class DataFetcher:
             global_cache_static.set(cache_key, company_name)
             return company_name
         except Exception as e:
-            print(f"Erreur lors de la récupération du nom de la société pour {ticker_symbol}: {e}")
+            logger.warning("Erreur nom société pour %s : %s", ticker_symbol, e)
             return None
 
     def get_option_data_chain(
@@ -318,7 +319,7 @@ class DataFetcher:
             expirations = ticker.options
             
             if not expirations:
-                print("Aucune date d'expiration trouvée.")
+                logger.warning("Aucune date d'expiration trouvée pour %s.", ticker_symbol)
                 return None, None
 
             # on cherche la date d'expiration disponible la plus proche de la date demandée
@@ -331,7 +332,7 @@ class DataFetcher:
             return opt_chain, closest_date
 
         except Exception as e:
-            print(f"Erreur lors de la récupération de la chaîne d'options: {e}")
+            logger.warning("Erreur chaîne d'options pour %s : %s", ticker_symbol, e)
             return None, None
             
     def get_implied_volatility_and_price(
@@ -366,12 +367,12 @@ class DataFetcher:
         elif option_type == 'put':
             data = opt_chain.puts
         else:
-            print(f"Type d'option non reconnu: {option_type}")
+            logger.warning("Type d'option non reconnu : %s", option_type)
             return None, None, None
         
         # on cherche le strike coté le plus proche du strike théorique demandé
         if data.empty:
-            print("Aucune donnée d'option pour cette expiration.")
+            logger.warning("Aucune donnée d'option pour cette expiration : %s", ticker_symbol)
             return None, None, closest_date
             
         # différence absolue pour identifier la ligne la plus proche
@@ -389,7 +390,9 @@ class DataFetcher:
         
         # une IV nulle ou négative n'est pas exploitable pour le pricing
         if iv is None or iv <= 0.001 or price is None or price <= 0:
-            print(f"IV ({iv}) ou Prix ({price}) non valide ou nul pour K={strike} et type={option_type}.")
+            logger.debug(
+                "IV (%s) ou Prix (%s) non valide pour K=%s type=%s", iv, price, strike, option_type
+            )
             return None, None, closest_date
             
         return iv, price, closest_date
