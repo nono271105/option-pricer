@@ -164,8 +164,8 @@ def fetch_market_data(ticker: str) -> Dict:
 
         # Mise à jour du store partagé
         _store.update(ticker=ticker, S=S, r=r, q=q,
-                      historical_vol=hist_vol, sigma=None,
-                      company_name=company, pricing_method="NC")
+                      historical_vol=hist_vol,
+                      company_name=company)
 
         return {
             "ticker": ticker,
@@ -207,9 +207,9 @@ def get_option_chain(ticker: str, expiry_str: str) -> Dict:
         if opt_chain is None or closest_date is None:
             return {"error": f"Aucune chaîne d'options pour {ticker}"}
 
-        S = _store.S or _data_fetcher.get_live_price(ticker) or 100.0
-        r = _store.r or 0.05
-        q = _store.q or 0.0
+        S = _store.S if _store.S is not None else (_data_fetcher.get_live_price(ticker) or 100.0)
+        r = _store.r if _store.r is not None else 0.05
+        q = _store.q if _store.q is not None else 0.0
         T = max((datetime.strptime(closest_date, "%Y-%m-%d").date() - date.today()).days / 365.0, 1/365)
 
         def _process_side(df, otype: str) -> List[Dict]:
@@ -328,8 +328,8 @@ def calculate_bsm(
         else:
             breakeven = round(K_f - price, 2) if position == "long" else round(K_f + price, 2)
 
-        # Mise à jour du store
-        _store.update(sigma=sigma, pricing_method="BSM")
+        # Mise à jour du store (S, r, q uniquement — sigma non stocké)
+        _store.update(pricing_method="BSM")
 
         return {
             "price": price,
@@ -418,7 +418,7 @@ def calculate_crr(
         else:
             breakeven = round(K_f - price, 2) if position == "long" else round(K_f + price, 2)
 
-        _store.update(sigma=sigma_used, pricing_method="CRR")
+        _store.update(pricing_method="CRR")
 
         return {
             "price": price,
@@ -518,9 +518,9 @@ def calculate_smile(ticker: str, expiry_str: str) -> Dict:
             return {"error": f"Aucune chaîne d'options disponible pour {ticker}"}
 
         T = max((datetime.strptime(closest_date, "%Y-%m-%d").date() - date.today()).days / 365.0, 1/365)
-        S = _store.S or _data_fetcher.get_live_price(ticker) or 100.0
-        r = _store.r or 0.05
-        q = _store.q or 0.0
+        S = _store.S if _store.S is not None else (_data_fetcher.get_live_price(ticker) or 100.0)
+        r = _store.r if _store.r is not None else 0.05
+        q = _store.q if _store.q is not None else 0.0
 
         strikes_interp, ivs_interp, smile_df = _smile_logic.process_smile_data(
             opt_chain, float(S), T, r, q
@@ -565,9 +565,9 @@ def calculate_surface(ticker: str) -> Dict:
     """
     ticker = ticker.strip().upper()
     try:
-        S = _store.S or _data_fetcher.get_live_price(ticker) or 100.0
-        r = _store.r or 0.05
-        q = _store.q or 0.0
+        S = _store.S if _store.S is not None else (_data_fetcher.get_live_price(ticker) or 100.0)
+        r = _store.r if _store.r is not None else 0.05
+        q = _store.q if _store.q is not None else 0.0
 
         raw_df, grids = _surface_logic.get_surface_for_ticker(
             ticker, float(S), r, q
@@ -802,7 +802,7 @@ def calculate_strategy(
         metrics = _strategy_mgr.compute_metrics(legs, S_range, payoff)
         greeks = _strategy_mgr.compute_greeks(legs, S_f, T_eff, r_f, sigma_used, q_f, _option_models)
 
-        _store.update(sigma=sigma_used, pricing_method="Strategy")
+        _store.update(pricing_method="Strategy")
 
         # Sérialisation
         def _fmt(val):
@@ -877,9 +877,9 @@ def run_forecast(
 
         T_total = max(float(T_days) / 365.0, 1e-6)
         K = float(strike)
-        S = _store.S or _data_fetcher.get_live_price(ticker) or 100.0
-        r = _store.r or 0.05
-        q = _store.q or 0.0
+        S = float(_store.S) if _store.S is not None else (_data_fetcher.get_live_price(ticker) or 100.0)
+        r = _store.r if _store.r is not None else 0.05
+        q = _store.q if _store.q is not None else 0.0
         ticker = ticker.strip().upper()
 
         occ_symbol = _data_fetcher.build_occ_symbol(ticker, expiry_str, K, option_type)
