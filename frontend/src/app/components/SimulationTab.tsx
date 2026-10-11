@@ -41,12 +41,12 @@ export function SimulationTab() {
       const sMax = parseInt(sMaxRef.current?.value || String(Math.round(S * 1.3)));
       const sStep = parseInt(sStepRef.current?.value || String(Math.round(S * 0.05)));
 
-      if (!(window as any).eel) {
+      if (!window.eel) {
         setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
         return;
       }
 
-      const res = await (window as any).eel.run_simulation(
+      const res = await window.eel.run_simulation(
         K, T_days, market.r, market.q,
         volMin, volMax, volStep,
         sMin, sMax, sStep, optType
@@ -57,7 +57,7 @@ export function SimulationTab() {
         return;
       }
 
-      setState(s => ({ ...s, loading: false, error: null, ...res }));
+      setState(s => ({ ...s, loading: false, ...res, error: null }));
     } catch (e: any) {
       setState(s => ({ ...s, loading: false, error: String(e) }));
     }

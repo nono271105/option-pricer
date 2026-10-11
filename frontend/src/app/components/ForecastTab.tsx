@@ -47,12 +47,12 @@ export function ForecastTab() {
       const histDays = parseInt(histDaysRef.current?.value || '60');
       const forecastDays = parseInt(forecastDaysRef.current?.value || '10');
 
-      if (!(window as any).eel) {
+      if (!window.eel) {
         setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
         return;
       }
 
-      const res = await (window as any).eel.run_forecast(ticker, strike, T_days, optType, matStr, histDays, forecastDays)();
+      const res = await window.eel.run_forecast(ticker, strike, T_days, optType, matStr, histDays, forecastDays)();
 
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));

@@ -31,11 +31,11 @@ export function SmileTab() {
     setState(s => ({ ...s, loading: true, error: null }));
 
     try {
-      if (!(window as any).eel) {
+      if (!window.eel) {
         setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
         return;
       }
-      const res = await (window as any).eel.calculate_smile(ticker, expiry)();
+      const res = await window.eel.calculate_smile(ticker, expiry)();
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
         return;

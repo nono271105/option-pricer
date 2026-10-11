@@ -42,6 +42,8 @@ export interface GreekPoint {
 
 export interface BsmResult {
   price: number;
+  sigma: number;
+  sigma_source: string;
   greeks: Greeks;
   payoff_data: PricePoint[];
   delta_data: GreekPoint[];
@@ -57,6 +59,8 @@ export interface BsmResult {
 
 export interface CrrResult {
   price: number;
+  sigma: number;
+  sigma_source: string;
   greeks: Greeks;
   payoff_data: PricePoint[];
   delta_data: GreekPoint[];
@@ -113,6 +117,8 @@ export interface ExoticPriceEntry {
 
 export interface ExoticResult {
   price: number;
+  sigma: number;
+  sigma_source: string;
   results: {
     analytical?: ExoticPriceEntry;
     mc?: ExoticPriceEntry & { std_error: number | null; ci_95: [number, number] | null };
@@ -172,6 +178,8 @@ export interface StrategyResult {
   value_today_data: StrategyValuePoint[];
   metrics: StrategyMetrics;
   greeks: Greeks;
+  sigma: number;
+  sigma_source: string;
   error: string | null;
 }
 
@@ -239,13 +247,14 @@ interface EelAPI {
   get_strategy_names(): () => Promise<string[]>;
   calculate_strategy(
     strategy_name: string, ticker: string, S: number, T_days: number,
-    r: number, sigma: number, q: number, expiry_str: string
+    r: number, q: number, expiry_str: string
   ): () => Promise<StrategyResult>;
 
   // Forecast
   run_forecast(
     ticker: string, strike: number, T_days: number,
-    option_type: string, expiry_str: string, history_days?: number
+    option_type: string, expiry_str: string,
+    history_days?: number, forecast_days?: number
   ): () => Promise<ForecastResult>;
 }
 

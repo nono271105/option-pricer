@@ -52,7 +52,7 @@ export function ExoticsTab() {
 
   const [exoticType, setExoticType] = useState<ExoticType>('digital');
   const showBarrier = exoticType.startsWith('barrier');
-  const showAveraging = exoticType === 'asian_mc';
+  const showAveraging = exoticType === 'asian';
   const showPayoffAmt = exoticType.includes('digital');
   const isMC = true; // Always true since MC is computed for all if nSims provided
 
