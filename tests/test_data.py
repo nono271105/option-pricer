@@ -37,6 +37,7 @@ SOFR_REASONABLE_MAX = 0.25     # 25 %
 # SECTION 1 : FRED API : SOFR
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.integration
 class TestFREDApiKey:
     """Vérifie que la clé FRED est bien configurée."""
 
@@ -56,6 +57,7 @@ class TestFREDApiKey:
         assert fetcher.fred_api_key == FRED_API_KEY
 
 
+@pytest.mark.integration
 class TestFREDConnectivity:
     """Tests de connectivité brute à l'API FRED."""
 
@@ -109,6 +111,7 @@ class TestFREDConnectivity:
         )
 
 
+@pytest.mark.integration
 class TestSOFRData:
     """Tests sur les données SOFR retournées par l'API FRED."""
 
@@ -181,6 +184,7 @@ class TestSOFRData:
         )
 
 
+@pytest.mark.integration
 class TestDataFetcherSOFR:
     """Tests de get_sofr_rate() via DataFetcher."""
 
@@ -223,6 +227,7 @@ class TestDataFetcherSOFR:
 # SECTION 2 : yfinance
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.integration
 class TestYfinanceConnectivity:
     """Tests de connectivité basique à yfinance."""
 
@@ -272,6 +277,7 @@ class TestYfinanceConnectivity:
         )
 
 
+@pytest.mark.integration
 class TestYfinancePriceData:
     """Tests sur les données de prix retournées par yfinance."""
 
@@ -313,6 +319,7 @@ class TestYfinancePriceData:
         )
 
 
+@pytest.mark.integration
 class TestYfinanceInfo:
     """Tests sur les métadonnées retournées par ticker.info."""
 
@@ -339,6 +346,7 @@ class TestYfinanceInfo:
         assert float(price) > 0, f"Prix de marché non positif : {price}."
 
 
+@pytest.mark.integration
 class TestDataFetcherYfinance:
     """Tests de get_live_price() et get_historical_volatility() via DataFetcher."""
 
@@ -417,6 +425,7 @@ class TestDataFetcherYfinance:
 # SECTION 3 : Tests d'intégration croisés
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.integration
 class TestIntegration:
     """Tests croisés FRED + yfinance : scénarios de pricing réalistes."""
 
@@ -487,6 +496,7 @@ class TestOCCSymbolBuilder:
         assert symbol == "F260618C00005000"
 
 
+@pytest.mark.integration
 class TestMarketDataToken:
     """Verifie que le token marketdata.app est configure."""
 
@@ -505,6 +515,7 @@ class TestMarketDataToken:
         )
 
 
+@pytest.mark.integration
 class TestMarketDataConnectivity:
     """Tests de connectivite a l'API marketdata.app."""
 
@@ -526,6 +537,7 @@ class TestMarketDataConnectivity:
         assert data.get("s") == "ok", f"Status inattendu : {data.get('s')}"
 
 
+@pytest.mark.integration
 class TestMarketDataOptionHistory:
     """Tests de recuperation de l'historique des prix d'options."""
 
