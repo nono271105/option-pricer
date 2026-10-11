@@ -1,11 +1,6 @@
 # Interface web (Eel : pont Python ↔ React)
 eel==0.16.0
 
-# IA & Séries temporelles
-timesfm @ git+https://github.com/google-research/timesfm.git@d720daa6786539c2566a44464fbda1019c0a82c0
-torch==2.12.0
-huggingface_hub==1.15.0
-
 # Data Science & Finance
 pandas==2.3.3
 numpy==2.4.4
@@ -19,5 +14,3 @@ plotly==6.7.0
 
 # Utilitaires
 python-dotenv==1.2.2
-pytest==9.0.3
-pytest-cov==7.1.0

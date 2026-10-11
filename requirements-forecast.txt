@@ -1,0 +1,8 @@
+# Dépendances optionnelles pour le module Forecast (TimesFM)
+# ATTENTION : torch est très lourd (~2 GB). Installer uniquement si le Forecast est nécessaire.
+# Installer avec : pip install -r requirements-forecast.txt
+-r requirements.txt
+
+timesfm @ git+https://github.com/google-research/timesfm.git@d720daa6786539c2566a44464fbda1019c0a82c0
+torch==2.12.0
+huggingface_hub==1.15.0
