@@ -26,6 +26,12 @@ from logic.exotic_options_logic import (
 from logic.volatility_smile_logic import VolatilitySmileLogic
 from logic.strategy_logic import StrategyManager
 from logic.volatility_surface_logic import ImpliedVolatilitySurface
+from validation import (
+    validate_pricing_params, validate_N_crr, validate_option_type,
+    validate_n_sims, validate_n_steps, validate_barrier_type,
+    validate_averaging, validate_exotic_type, validate_r, validate_q,
+    _validation_error_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -286,39 +292,41 @@ def calculate_bsm(
         }
     """
     try:
+        # ── Validation des entrées ───────────────────────────────────────────
+        S_f, K_f, r_f, q_f = float(S), float(K), float(r), float(q)
         mat_dt = _parse_date(maturity_date, 90)
-        
         T_days = max((mat_dt.date() - date.today()).days, 1)
         T = T_days / 365.0
-        S, K, r, q = float(S), float(K), float(r), float(q)
-        
-        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K, mat_dt, option_type)
+        validate_pricing_params(S_f, K_f, T, r_f, q_f, option_type)
+        # position validée manuellement (pas de validate_position : erreur non critique)
+
+        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K_f, mat_dt, option_type)
         sigma = iv if iv is not None else (_store.historical_vol or 0.20)
         sigma_source = "IV" if iv is not None else "Historique"
 
-        price = _option_models.black_scholes_price(S, K, T, r, sigma, q, option_type)
+        price = _option_models.black_scholes_price(S_f, K_f, T, r_f, sigma, q_f, option_type)
         price = round(float(price), 4)
 
         # Grecs bruts de l'option, puis signe de la position appliqué
         # (short = tous les grecs inversés)
-        raw_greeks = _option_models.calculate_greeks(S, K, T, r, sigma, q, option_type)
+        raw_greeks = _option_models.calculate_greeks(S_f, K_f, T, r_f, sigma, q_f, option_type)
         sign = 1 if position == "long" else -1
         greeks = {k: round(sign * float(v), 6) for k, v in raw_greeks.items()}
 
-        payoff_data = _payoff_curve(K, price, option_type, position, S)
+        payoff_data = _payoff_curve(K_f, price, option_type, position, S_f)
 
         # Courbes des grecs vs spot (signe de position inclus)
         greek_curves = {}
         for greek_name in ("delta", "gamma", "theta", "vega", "rho"):
             greek_curves[f"{greek_name}_data"] = _greek_curve(
-                S, K, T, r, sigma, q, option_type, greek_name, position
+                S_f, K_f, T, r_f, sigma, q_f, option_type, greek_name, position
             )
 
         # Point mort
         if option_type == "call":
-            breakeven = round(K + price, 2) if position == "long" else round(K - price, 2)
+            breakeven = round(K_f + price, 2) if position == "long" else round(K_f - price, 2)
         else:
-            breakeven = round(K - price, 2) if position == "long" else round(K + price, 2)
+            breakeven = round(K_f - price, 2) if position == "long" else round(K_f + price, 2)
 
         # Mise à jour du store
         _store.update(sigma=sigma, pricing_method="BSM")
@@ -331,10 +339,12 @@ def calculate_bsm(
             "greeks": greeks,
             **greek_curves,
             "breakeven": breakeven,
-            "S": S,
-            "K": K,
+            "S": S_f,
+            "K": K_f,
             "error": None,
         }
+    except ValueError as e:
+        return _validation_error_response(e)
     except Exception as e:
         logger.exception("calculate_bsm error")
         return {"error": str(e)}
@@ -363,38 +373,40 @@ def calculate_crr(
         }
     """
     try:
+        # ── Validation des entrées ───────────────────────────────────────────
+        S_f, K_f, r_f, q_f = float(S), float(K), float(r), float(q)
+        N_i = int(N)
         mat_dt = _parse_date(maturity_date, 90)
-            
         T_days = max((mat_dt.date() - date.today()).days, 1)
         T = T_days / 365.0
-        S, K, r, q = float(S), float(K), float(r), float(q)
-        N = int(N)
+        validate_pricing_params(S_f, K_f, T, r_f, q_f, option_type)
+        validate_N_crr(N_i)
 
-        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K, mat_dt, option_type)
+        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K_f, mat_dt, option_type)
         sigma_used = iv if iv is not None else (_store.historical_vol or 0.20)
         sigma_source = "IV" if iv is not None else "Historique"
 
-        price = _crr_models.cox_ross_rubinstein_price(S, K, T, r, q, sigma_used, N, option_type)
+        price = _crr_models.cox_ross_rubinstein_price(S_f, K_f, T, r_f, q_f, sigma_used, N_i, option_type)
         price = round(float(price), 4)
 
         # Grecs bruts CRR, puis signe de la position appliqué
-        raw_greeks = _crr_models.calculate_greeks_crr(S, K, T, r, q, sigma_used, N, option_type)
+        raw_greeks = _crr_models.calculate_greeks_crr(S_f, K_f, T, r_f, q_f, sigma_used, N_i, option_type)
         sign = 1 if position == "long" else -1
         greeks = {k: round(sign * float(v), 6) for k, v in raw_greeks.items()}
 
-        payoff_data = _payoff_curve(K, price, option_type, position, S)
+        payoff_data = _payoff_curve(K_f, price, option_type, position, S_f)
 
         # Courbes grecs (différences finies sur CRR : plus lent, N réduit)
-        n_curve = min(N, 100)
+        n_curve = min(N_i, 100)
         greek_curves = {}
-        s_min, s_max = S * 0.6, S * 1.4
+        s_min, s_max = S_f * 0.6, S_f * 1.4
         spots = np.linspace(s_min, s_max, 60)
         for greek_name in ("delta", "gamma", "theta", "vega", "rho"):
             curve = []
             for s in spots:
                 try:
                     g = _crr_models.calculate_greeks_crr(
-                        float(s), K, T, r, q, sigma_used, n_curve, option_type
+                        float(s), K_f, T, r_f, q_f, sigma_used, n_curve, option_type
                     )
                     curve.append({"spot": round(float(s), 2), "value": round(sign * g[greek_name], 6)})
                 except Exception:
@@ -402,9 +414,9 @@ def calculate_crr(
             greek_curves[f"{greek_name}_data"] = curve
 
         if option_type == "call":
-            breakeven = round(K + price, 2) if position == "long" else round(K - price, 2)
+            breakeven = round(K_f + price, 2) if position == "long" else round(K_f - price, 2)
         else:
-            breakeven = round(K - price, 2) if position == "long" else round(K + price, 2)
+            breakeven = round(K_f - price, 2) if position == "long" else round(K_f + price, 2)
 
         _store.update(sigma=sigma_used, pricing_method="CRR")
 
@@ -416,10 +428,12 @@ def calculate_crr(
             "payoff_data": payoff_data,
             **greek_curves,
             "breakeven": breakeven,
-            "S": S,
-            "K": K,
+            "S": S_f,
+            "K": K_f,
             "error": None,
         }
+    except ValueError as e:
+        return _validation_error_response(e)
     except Exception as e:
         logger.exception("calculate_crr error")
         return {"error": str(e)}
@@ -448,9 +462,15 @@ def run_simulation(
         }
     """
     try:
-        T = max(float(T_days) / 365.0, 1e-6)
+        # ── Validation des entrées ───────────────────────────────────────────
+        K_f, r_f, q_f = float(K), float(r), float(q)
+        T_f = max(float(T_days) / 365.0, 1e-6)
+        validate_r(r_f)
+        validate_q(q_f)
+        validate_option_type(option_type)
+
         vols, prices, matrix, _ = _simulation.run_simulation(
-            K=float(K), T=T, r=float(r), q=float(q),
+            K=K_f, T=T_f, r=r_f, q=q_f,
             vol_min=int(vol_min), vol_max=int(vol_max), vol_step=int(vol_step),
             underlying_min=int(underlying_min), underlying_max=int(underlying_max),
             underlying_step=int(underlying_step),
@@ -463,6 +483,8 @@ def run_simulation(
             "matrix": [[round(float(v), 4) for v in row] for row in matrix.tolist()],
             "error": None,
         }
+    except ValueError as e:
+        return _validation_error_response(e)
     except Exception as e:
         logger.exception("run_simulation error")
         return {"error": str(e)}
@@ -608,60 +630,69 @@ def price_exotic(
         }
     """
     try:
+        # ── Validation des entrées ───────────────────────────────────────────
+        S_f, K_f, r_f, q_f = float(S), float(K), float(r), float(q)
         mat_dt = _parse_date(maturity_date, 90)
+        T_days_i = max((mat_dt.date() - date.today()).days, 1)
+        T = T_days_i / 365.0
+        validate_pricing_params(S_f, K_f, T, r_f, q_f, option_type)
+        validate_exotic_type(exotic_type)
+        validate_n_sims(n_sims)
+        validate_n_steps(n_steps)
+        if exotic_type == "barrier":
+            if barrier is None:
+                return {"error": "barrier requis pour barrier option"}
+            validate_barrier_type(barrier_type)
+        if exotic_type == "asian":
+            validate_averaging(averaging)
 
-        T_days = max((mat_dt.date() - date.today()).days, 1)
-        T = T_days / 365.0
-        S, K, r, q = float(S), float(K), float(r), float(q)
-
-        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K, mat_dt, option_type)
+        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K_f, mat_dt, option_type)
         sigma = iv if iv is not None else (_store.historical_vol or 0.20)
         sigma_source = "IV" if iv is not None else "Historique"
 
         results = {}
 
         if exotic_type == "barrier":
-            if barrier is None:
-                return {"error": "barrier requis pour barrier option"}
             # Analytical
             try:
-                res_ana = price_barrier_analytical(S, K, T, r, sigma, q, float(barrier),
+                res_ana = price_barrier_analytical(S_f, K_f, T, r_f, sigma, q_f, float(barrier),
                                                    option_type, barrier_type)
                 results["analytical"] = {
                     "price": float(res_ana.price),
                     "method": res_ana.method
                 }
-            except Exception as e:
+            except Exception:
                 pass
             # Monte Carlo
             try:
-                res_mc = price_barrier_mc(S, K, T, r, sigma, q, float(barrier),
+                res_mc = price_barrier_mc(S_f, K_f, T, r_f, sigma, q_f, float(barrier),
                                           option_type, barrier_type, n_sims, n_steps, seed)
-            except Exception as e:
+            except Exception:
                 res_mc = None
 
         elif exotic_type == "asian":
-            res_mc = price_asian_mc(S, K, T, r, sigma, q, option_type, averaging,
+            res_mc = price_asian_mc(S_f, K_f, T, r_f, sigma, q_f, option_type, averaging,
                                     n_sims, n_steps, seed)
 
         elif exotic_type == "lookback":
-            res_mc = price_lookback_mc(S, T, r, sigma, q, option_type, n_sims, n_steps, seed)
+            res_mc = price_lookback_mc(S_f, T, r_f, sigma, q_f, option_type, n_sims, n_steps, seed)
 
         elif exotic_type == "digital":
             try:
-                res_ana = price_digital_analytical(S, K, T, r, sigma, q, option_type, payoff_amount)
+                res_ana = price_digital_analytical(S_f, K_f, T, r_f, sigma, q_f, option_type, payoff_amount)
                 results["analytical"] = {
                     "price": float(res_ana.price),
                     "method": res_ana.method
                 }
-            except Exception as e:
+            except Exception:
                 pass
             try:
-                res_mc = price_digital_mc(S, K, T, r, sigma, q, option_type, payoff_amount,
+                res_mc = price_digital_mc(S_f, K_f, T, r_f, sigma, q_f, option_type, payoff_amount,
                                           n_sims, n_steps, seed)
-            except Exception as e:
+            except Exception:
                 res_mc = None
         else:
+            # Unreachable grâce à validate_exotic_type mais garde la lisibilité
             return {"error": f"Type exotique inconnu: {exotic_type}"}
 
         paths_data = None
@@ -700,10 +731,12 @@ def price_exotic(
             "results": results,
             "price_paths": paths_data,
             "payoff_distribution": dist_data,
-            "S": S,
-            "K": K,
+            "S": S_f,
+            "K": K_f,
             "error": None,
         }
+    except ValueError as e:
+        return _validation_error_response(e)
     except Exception as e:
         logger.exception("price_exotic error")
         return {"error": str(e)}
@@ -744,28 +777,31 @@ def calculate_strategy(
         }
     """
     try:
-        T = max(float(T_days) / 365.0, 1e-6)
-        S, r, q = float(S), float(r), float(q)
+        # ── Validation des entrées ───────────────────────────────────────────
+        S_f, r_f, q_f = float(S), float(r), float(q)
+        T_f = max(float(T_days) / 365.0, 1e-6)
+        validate_r(r_f)
+        validate_q(q_f)
 
         maturity_dt = _parse_date(expiry_str, int(T_days))
 
-        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, S, maturity_dt, "call")
+        iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, S_f, maturity_dt, "call")
         sigma_used = iv if iv is not None else (_store.historical_vol or 0.20)
         sigma_source = "IV" if iv is not None else "Historique"
 
         legs, T_eff = _strategy_mgr.build_legs(
-            strategy_name, S, T, r, sigma_used, q, maturity_dt, ticker,
+            strategy_name, S_f, T_f, r_f, sigma_used, q_f, maturity_dt, ticker,
             _data_fetcher, _option_models
         )
 
-        S_range = np.linspace(S * 0.6, S * 1.4, 300)
+        S_range = np.linspace(S_f * 0.6, S_f * 1.4, 300)
         payoff = _strategy_mgr.compute_payoff(legs, S_range)
         value_today = _strategy_mgr.compute_value_today(
-            legs, S_range, S, T_eff, r, sigma_used, q, _option_models
+            legs, S_range, S_f, T_eff, r_f, sigma_used, q_f, _option_models
         )
         metrics = _strategy_mgr.compute_metrics(legs, S_range, payoff)
-        greeks = _strategy_mgr.compute_greeks(legs, S, T_eff, r, sigma_used, q, _option_models)
-        
+        greeks = _strategy_mgr.compute_greeks(legs, S_f, T_eff, r_f, sigma_used, q_f, _option_models)
+
         _store.update(sigma=sigma_used, pricing_method="Strategy")
 
         # Sérialisation
@@ -798,6 +834,8 @@ def calculate_strategy(
             "greeks": greeks,
             "error": None,
         }
+    except ValueError as e:
+        return _validation_error_response(e)
     except Exception as e:
         logger.exception("calculate_strategy error for %s", strategy_name)
         return {"error": str(e)}
