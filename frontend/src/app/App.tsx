@@ -7,7 +7,6 @@ import { SmileTab } from './components/SmileTab';
 import { SurfaceTab } from './components/SurfaceTab';
 import { ExoticsTab } from './components/ExoticsTab';
 import { StrategiesTab } from './components/StrategiesTab';
-import { ForecastTab } from './components/ForecastTab';
 
 // ── Contexte de marché partagé entre tous les onglets ─────────────────────
 
@@ -81,7 +80,6 @@ const TABS = [
   { id: 'surface',    label: 'Surface 3D' },
   { id: 'exotics',    label: 'Exotiques' },
   { id: 'strategies', label: 'Stratégies' },
-  { id: 'forecast',   label: 'Forecast' },
 ];
 
 // ── Composant principal ───────────────────────────────────────────────────
@@ -254,7 +252,6 @@ export default function App() {
             <div className={activeTab === 'surface' ? 'block h-full' : 'hidden'}><SurfaceTab /></div>
             <div className={activeTab === 'exotics' ? 'block h-full' : 'hidden'}><ExoticsTab /></div>
             <div className={activeTab === 'strategies' ? 'block h-full' : 'hidden'}><StrategiesTab /></div>
-            <div className={activeTab === 'forecast' ? 'block h-full' : 'hidden'}><ForecastTab /></div>
           </div>
         </div>
 

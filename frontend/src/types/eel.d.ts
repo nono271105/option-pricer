@@ -183,18 +183,6 @@ export interface StrategyResult {
   error: string | null;
 }
 
-export interface ForecastResult {
-  iv_forecast: (number | null)[];
-  option_prices_forecast: (number | null)[];
-  deltas_forecast: (number | null)[];
-  iv_history: (number | null)[];
-  option_prices_history: (number | null)[];
-  deltas_history: (number | null)[];
-  x_history: number[];
-  occ_symbol: string;
-  error: string | null;
-}
-
 // ── Interface principale de window.eel ─────────────────────────────────────
 
 interface EelAPI {
@@ -249,13 +237,6 @@ interface EelAPI {
     strategy_name: string, ticker: string, S: number, T_days: number,
     r: number, q: number, expiry_str: string
   ): () => Promise<StrategyResult>;
-
-  // Forecast
-  run_forecast(
-    ticker: string, strike: number, T_days: number,
-    option_type: string, expiry_str: string,
-    history_days?: number, forecast_days?: number
-  ): () => Promise<ForecastResult>;
 }
 
 // ── Extension de l'interface Window ────────────────────────────────────────

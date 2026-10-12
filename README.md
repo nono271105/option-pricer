@@ -13,7 +13,6 @@
   <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white" alt="Vite">
   <img src="https://img.shields.io/badge/Eel-0.16-4B8BBE?logo=python&logoColor=white" alt="Eel">
   <br>
-  <img src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?logo=PyTorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/Plotly-%233F4F75.svg?logo=plotly&logoColor=white" alt="Plotly">
   <img src="https://img.shields.io/badge/NumPy-%23013243.svg?logo=numpy&logoColor=white" alt="NumPy">
   <img src="https://img.shields.io/badge/pandas-%23150458.svg?logo=pandas&logoColor=white" alt="pandas">
@@ -44,7 +43,6 @@
 - **Prix spot** via Yahoo Finance (`yfinance`)
 - **Taux sans risque SOFR** depuis l'API FRED
 - **Dividendes** et **volatilité implicite** extraits automatiquement depuis les chaînes d'options
-- **Historique prix options** via l'API marketdata.app (utilisé pour le forecast IV)
 - Cache TTL thread-safe pour limiter les appels API
 
 ### Grecs
@@ -53,7 +51,7 @@ Delta (Δ), Gamma (Γ), Theta (Θ/jour), Vega (ν), Rho (ρ), calculés analytiq
 
 ---
 
-## Interface 9 onglets
+## Interface 8 onglets
 
 ### 1 · Option Chain
 
@@ -129,16 +127,6 @@ Construction et analyse de stratégies options multi-legs avec données de march
 
 ---
 
-### 9 · Forecast IV TimesFM (IA)
-
-Prévision de la **volatilité implicite (IV)** via le modèle de fondation **Google TimesFM (2.5-200M)**.
-Historique d'IV recalculé par inversion BSM (Brent) à partir des prix d'options fournis par l'API **marketdata.app**.
-Repricing BSM et recalcul du delta jour par jour sur l'horizon de forecast (jusqu'à 63 jours) en injectant l'IV prédite.
-
-![1782558332081](image/README/1782558332081.png)
-
----
-
 ## Architecture
 
 ### React ↔ Python via Eel
@@ -149,7 +137,7 @@ L'application repose sur **[Eel](https://github.com/python-eel/Eel)** comme pont
 ┌─────────────────────────────────────────────────┐
 │                 Frontend React                  │
 │   TypeScript · Vite · Tailwind · Plotly.js      │
-│   9 onglets · MarketContext partagé             │
+│   8 onglets · MarketContext partagé             │
 └────────────────────┬────────────────────────────┘
                      │  window.eel.*()
 ┌────────────────────▼────────────────────────────┐
@@ -197,7 +185,6 @@ pip install -r requirements.txt
 
 # 4. Variables d'environnement (créer un fichier .env à la racine)
 FRED_API_KEY=VOTRE-CLÉ                  # API FRED pour le taux SOFR
-MARKET_DATA_TOKEN=VOTRE-TOKEN           # API marketdata.app pour l'IV historique
 
 # 5. Compiler le frontend
 cd frontend
@@ -235,7 +222,6 @@ option_pricer/
 │   ├── bsm_logic.py                  # Modèle Black-Scholes + Grecs
 │   ├── crr_logic.py                  # Modèle Cox-Ross-Rubinstein + Grecs
 │   ├── exotic_options_logic.py       # Barrières, Asiatiques, Lookback, Digitales
-│   ├── forecast_logic.py             # Moteur TimesFM
 │   ├── simulation_logic.py           # Calcul heatmap
 │   ├── strategy_logic.py             # Moteur de calcul des 22 stratégies
 │   ├── volatility_smile_logic.py     # Calcul IV smile
@@ -253,8 +239,7 @@ option_pricer/
 │   │   │       ├── SmileTab.tsx         # Smile de volatilité
 │   │   │       ├── SurfaceTab.tsx       # Surface IV 3D
 │   │   │       ├── ExoticsTab.tsx       # Options exotiques
-│   │   │       ├── StrategiesTab.tsx    # Stratégies multi-legs
-│   │   │       └── ForecastTab.tsx      # Forecast IV TimesFM
+│   │   │       └── StrategiesTab.tsx    # Stratégies multi-legs
 │   │   └── styles/
 │   ├── package.json
 │   └── vite.config.ts
@@ -279,14 +264,12 @@ option_pricer/
 | --------------------------- | ----------------------------------------- |
 | `eel`                     | Pont Python ↔ React (WebSocket)          |
 | `yfinance`                | Prix spot, IV, chaînes d'options         |
-| `marketdata.app` (API)    | Historique prix options (IV forecast)     |
 | `scipy`                   | CDF normale, interpolation, optimisation  |
 | `numpy`                   | Calcul numérique                         |
 | `pandas`                  | Manipulation de données                  |
 | `requests`                | API FRED                                  |
 | `python-dotenv`           | Variables d'environnement                 |
 | `pytest` / `pytest-cov` | Tests de régression                      |
-| `timesfm` / `torch`     | Modèle de prévision IA (Google TimesFM) |
 
 ### Frontend React
 

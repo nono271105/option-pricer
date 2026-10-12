@@ -13,7 +13,6 @@ from logic.exotic_options_logic import (
     price_digital_analytical, price_digital_mc,
 )
 from logic.strategy_logic import StrategyManager
-from logic.forecast_logic import ForecastLogic
 
 __all__ = [
     "OptionModels", "CRRModels", "SimulationLogic",
@@ -22,5 +21,5 @@ __all__ = [
     "price_barrier_analytical", "price_barrier_mc",
     "price_asian_mc", "price_lookback_mc",
     "price_digital_analytical", "price_digital_mc",
-    "StrategyManager", "ForecastLogic",
+    "StrategyManager",
 ]

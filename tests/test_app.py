@@ -6,8 +6,6 @@ test_app.py : Tests unitaires pour tous les modules non-pricing.
 Notes de migration (PySide6 → React/Eel) :
     - TestUtils supprimé : get_default_maturity_date (utils.py) et PySide6 ne font
       plus partie du projet depuis la migration vers Eel.
-    - TestForecastLogic adapté : process_iv_forecast_results reçoit désormais un
-      array 1D directement (le découpage [0] est fait en amont dans run_iv_forecast).
 """
 
 import sys
@@ -29,7 +27,6 @@ from data_fetcher import DataFetcher
 from market_data_store import MarketDataStore
 from logic.strategy_logic import StrategyManager
 from logic.simulation_logic import SimulationLogic
-from logic.forecast_logic import ForecastLogic
 from logic.volatility_smile_logic import VolatilitySmileLogic
 from logic.bsm_logic import OptionModels
 
@@ -383,158 +380,6 @@ class TestSimulationLogic:
         prices_col = matrix[:, 0]
         for i in range(len(prices_col) - 1):
             assert prices_col[i + 1] >= prices_col[i]
-
-
-# ============================================================================
-#  FORECAST_LOGIC  (inversion IV et repricing à IV prédite)
-# ============================================================================
-
-class TestForecastLogic:
-    """Tests pour forecast_logic.py (inversion IV, repricing, pas l'inférence TimesFM).
-
-    Depuis la migration React/Eel, process_iv_forecast_results attend un array
-    1D directement (le découpage [0] est fait en amont dans run_iv_forecast).
-    """
-
-    def setup_method(self):
-        self.om = OptionModels()
-        self.fl = ForecastLogic(self.om)
-
-    def test_compute_iv_roundtrip_call(self):
-        """BSM(sigma) donne un prix, l'inversion doit retrouver sigma."""
-        sigma_true = 0.25
-        S, K, T_days, r, q = 100, 100, 30, 0.05, 0.01
-        T = T_days / 365.0
-        price = self.om.black_scholes_price(S, K, T, r, sigma_true, q, "call")
-
-        iv_series = self.fl.compute_iv_from_prices(
-            mid_prices=[price],
-            underlying_prices=[S],
-            dtes=[T_days],
-            strike=K, r=r, q=q, option_type="call",
-        )
-        assert len(iv_series) == 1
-        assert iv_series[0] == pytest.approx(sigma_true, abs=1e-3)
-
-    def test_compute_iv_roundtrip_put(self):
-        """Même test pour un put."""
-        sigma_true = 0.30
-        S, K, T_days, r, q = 100, 105, 60, 0.05, 0.0
-        T = T_days / 365.0
-        price = self.om.black_scholes_price(S, K, T, r, sigma_true, q, "put")
-
-        iv_series = self.fl.compute_iv_from_prices(
-            mid_prices=[price],
-            underlying_prices=[S],
-            dtes=[T_days],
-            strike=K, r=r, q=q, option_type="put",
-        )
-        assert iv_series[0] == pytest.approx(sigma_true, abs=1e-3)
-
-    def test_compute_iv_multiple_points(self):
-        """Inversion sur une série de 10 points avec des IV variables."""
-        S_vals = [100, 101, 99, 102, 98, 103, 97, 104, 100, 101]
-        sigma_vals = [0.20, 0.22, 0.21, 0.23, 0.19, 0.24, 0.18, 0.25, 0.20, 0.22]
-        K, r, q = 100, 0.05, 0.0
-        dte_vals = [30, 29, 28, 27, 26, 25, 24, 23, 22, 21]
-
-        prices = []
-        for i in range(10):
-            T = dte_vals[i] / 365.0
-            p = self.om.black_scholes_price(S_vals[i], K, T, r, sigma_vals[i], q, "call")
-            prices.append(p)
-
-        iv_series = self.fl.compute_iv_from_prices(
-            mid_prices=prices,
-            underlying_prices=S_vals,
-            dtes=dte_vals,
-            strike=K, r=r, q=q, option_type="call",
-        )
-        assert len(iv_series) == 10
-        for i in range(10):
-            assert iv_series[i] == pytest.approx(sigma_vals[i], abs=1e-3)
-
-    def test_compute_iv_handles_invalid_prices(self):
-        """Les prix invalides (négatifs, nuls) sont interpolés."""
-        K, r, q = 100, 0.05, 0.0
-        valid_price = self.om.black_scholes_price(100, K, 30/365, r, 0.25, q, "call")
-
-        iv_series = self.fl.compute_iv_from_prices(
-            mid_prices=[valid_price, -1.0, 0.0, valid_price],
-            underlying_prices=[100, 100, 100, 100],
-            dtes=[30, 29, 28, 27],
-            strike=K, r=r, q=q, option_type="call",
-        )
-        assert len(iv_series) == 4
-        # les NaN doivent avoir été interpolés
-        assert not np.any(np.isnan(iv_series))
-
-    def test_process_iv_forecast_results_shapes(self):
-        """Vérifie les dimensions des séries retournées.
-
-        process_iv_forecast_results attend désormais un array 1D (horizon,)
-        directement : le découpage [0] est fait dans run_iv_forecast.
-        """
-        horizon = 10
-        iv_history = np.full(20, 0.25)
-        # Array 1D : la méthode fait .flatten() en interne
-        iv_point_forecast = np.full(horizon, 0.24)
-
-        iv_fc, opt_prices, deltas, iv_hist, hist_opt, hist_d, x_hist = \
-            self.fl.process_iv_forecast_results(
-                iv_point_forecast, iv_history, horizon,
-                K=100, T_total=0.25, S=100, r=0.05, q=0.0,
-                option_type="call",
-            )
-
-        assert len(iv_fc) == horizon
-        assert len(opt_prices) == horizon
-        assert len(deltas) == horizon
-        assert len(iv_hist) == 20   # min(30, 20) = 20
-        assert len(hist_opt) == 20
-        assert len(hist_d) == 20
-
-    def test_process_iv_forecast_option_prices_positive(self):
-        """Les prix d'options repricés doivent être strictement positifs."""
-        horizon = 5
-        iv_history = np.full(30, 0.25)
-        iv_point_forecast = np.full(horizon, 0.25)  # 1D
-
-        _, opt_prices, _, _, _, _, _ = self.fl.process_iv_forecast_results(
-            iv_point_forecast, iv_history, horizon,
-            K=100, T_total=0.5, S=100, r=0.05, q=0.0,
-            option_type="call",
-        )
-        assert np.all(opt_prices > 0)
-
-    def test_process_iv_forecast_delta_range(self):
-        """Les deltas d'un call doivent être dans [0, 1]."""
-        horizon = 10
-        iv_history = np.full(30, 0.25)
-        iv_point_forecast = np.linspace(0.15, 0.35, horizon)  # 1D
-
-        _, _, deltas, _, _, _, _ = self.fl.process_iv_forecast_results(
-            iv_point_forecast, iv_history, horizon,
-            K=100, T_total=0.5, S=100, r=0.05, q=0.0,
-            option_type="call",
-        )
-        assert np.all(deltas >= 0)
-        assert np.all(deltas <= 1)
-
-    def test_process_iv_forecast_negative_iv_clamped(self):
-        """Les IV négatives prédites doivent être bornées à 0.01 minimum."""
-        horizon = 3
-        iv_history = np.full(10, 0.20)
-        # IV négatives simulant un artefact du modèle : array 1D
-        iv_point_forecast = np.array([-0.05, 0.0, 0.10])
-
-        iv_fc, opt_prices, _, _, _, _, _ = self.fl.process_iv_forecast_results(
-            iv_point_forecast, iv_history, horizon,
-            K=100, T_total=0.5, S=100, r=0.05, q=0.0,
-            option_type="call",
-        )
-        # les prix doivent quand même être positifs grâce au clamping
-        assert np.all(opt_prices > 0)
 
 
 # ============================================================================
