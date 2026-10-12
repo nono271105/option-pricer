@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import Plot from 'react-plotly.js';
+import Plot from './Plot';
 import { useMarket } from '../App';
 
 interface SmilePoint { strike: number; iv: number; type: string; }

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useMarket } from '../App';
-import Plot from 'react-plotly.js';
+import Plot from './Plot';
 
 interface SurfaceState {
   strikes: number[];

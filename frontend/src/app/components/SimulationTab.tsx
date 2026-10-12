@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useMarket } from '../App';
-import Plot from 'react-plotly.js';
+import Plot from './Plot';
 
 interface SimState {
   vols: number[];
