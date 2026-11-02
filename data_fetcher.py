@@ -7,6 +7,7 @@ import os
 import numpy as np
 from typing import Optional, Tuple
 from cache import global_cache_price, global_cache_chain, global_cache_static
+from validation import MAX_STRIKE_GAP_RATIO
 
 load_dotenv()
 
@@ -77,31 +78,43 @@ class DataFetcher:
         if cached_rate is not None:
             return cached_rate
         
-        url = f"https://api.stlouisfed.org/fred/series/observations?series_id=SOFR&api_key={self.fred_api_key}&file_type=json"
+        url = "https://api.stlouisfed.org/fred/series/observations"
+        params = {
+            "series_id": "SOFR",
+            "api_key": self.fred_api_key,
+            "file_type": "json",
+            "sort_order": "desc",
+            "limit": 10,
+        }
         try:
-            response = requests.get(url, timeout=15)
+            response = requests.get(url, params=params, timeout=15)
             response.raise_for_status() 
             data = response.json()
             
             observations = data.get('observations', [])
-            if observations:
-                latest_observation = observations[-1]
-                sofr_value = float(latest_observation['value'])
-                sofr_decimal = sofr_value / 100.0
-                # on met en cache avant de retourner
-                global_cache_static.set(cache_key, sofr_decimal)
-                return sofr_decimal
-            else:
-                logger.warning("Aucune observation SOFR trouvée dans la réponse de l'API.")
-                return None
+            for obs in observations:
+                try:
+                    sofr_value = float(obs['value'])
+                    sofr_decimal = sofr_value / 100.0
+                    global_cache_static.set(cache_key, sofr_decimal)
+                    return sofr_decimal
+                except (ValueError, TypeError, KeyError):
+                    continue
+
+            logger.warning("Aucune observation SOFR valide trouvée dans la réponse de l'API.")
+            return None
         except requests.exceptions.RequestException as e:
-            logger.warning("Erreur HTTP SOFR : %s", e)
+            status = getattr(getattr(e, 'response', None), 'status_code', None)
+            if status is not None:
+                logger.warning("Erreur HTTP SOFR : %s (status %s)", type(e).__name__, status)
+            else:
+                logger.warning("Erreur HTTP SOFR : %s", type(e).__name__)
             return None
         except ValueError as e:
-            logger.warning("Erreur parsing SOFR : %s", e)
+            logger.warning("Erreur parsing SOFR : %s", type(e).__name__)
             return None
         except Exception as e:
-            logger.warning("Erreur inattendue SOFR : %s", e)
+            logger.warning("Erreur inattendue SOFR : %s", type(e).__name__)
             return None
 
     def get_dividend_yield(self, ticker_symbol: str) -> float:
@@ -183,6 +196,29 @@ class DataFetcher:
             logger.warning("Erreur nom société pour %s : %s", ticker_symbol, e)
             return None
 
+    def get_available_expiries(self, ticker_symbol: str) -> list:
+        key = f"expiries_{ticker_symbol.upper()}"
+        cached = global_cache_static.get(key)
+        if cached is not None:
+            return cached
+        expirations = list(yf.Ticker(ticker_symbol).options)
+        if expirations:
+            global_cache_static.set(key, expirations)   # jamais d'échec en cache
+        return expirations
+
+    def get_option_chain_for_expiry(self, ticker_symbol: str, expiry_str: str):
+        key = f"chain_{ticker_symbol.upper()}_{expiry_str}"
+        cached = global_cache_chain.get(key)
+        if cached is not None:
+            return cached
+        try:
+            chain = yf.Ticker(ticker_symbol).option_chain(expiry_str)
+        except Exception as e:
+            logger.warning("Erreur chaîne %s %s : %s", ticker_symbol, expiry_str, e)
+            return None
+        global_cache_chain.set(key, chain)
+        return chain
+
     def get_option_data_chain(
         self, 
         ticker_symbol: str, 
@@ -196,11 +232,10 @@ class DataFetcher:
             maturity_datetime: Date d'expiration souhaitée
             
         Returns:
-            Tuple[Optional[OptionChain], Optional[str]]: (option_chain, date_expiration_réelle)
+            Tuple[Optional[object], Optional[str]]: (option_chain, date_expiration_réelle)
         """
         try:
-            ticker = yf.Ticker(ticker_symbol)
-            expirations = ticker.options
+            expirations = self.get_available_expiries(ticker_symbol)
             
             if not expirations:
                 logger.warning("Aucune date d'expiration trouvée pour %s.", ticker_symbol)
@@ -211,9 +246,10 @@ class DataFetcher:
                                key=lambda x: abs(datetime.strptime(x, '%Y-%m-%d').date() - maturity_datetime.date()))
             
             # récupération de la chaîne pour cette date
-            opt_chain = ticker.option_chain(closest_date)
-            
-            return opt_chain, closest_date
+            chain = self.get_option_chain_for_expiry(ticker_symbol, closest_date)
+            if chain is not None:
+                return chain, closest_date
+            return None, None
 
         except Exception as e:
             logger.warning("Erreur chaîne d'options pour %s : %s", ticker_symbol, e)
@@ -262,6 +298,12 @@ class DataFetcher:
         # différence absolue pour identifier la ligne la plus proche
         data = data.assign(abs_diff=lambda df: abs(df['strike'] - strike))
         closest_row = data.sort_values('abs_diff').iloc[0]
+        
+        gap = abs(float(closest_row['strike']) - strike) / strike
+        if gap > MAX_STRIKE_GAP_RATIO:
+            logger.warning("Strike %s trop éloigné du strike coté %s (écart %.1f%%) pour %s",
+                           strike, closest_row['strike'], gap * 100, ticker_symbol)
+            return None, None, closest_date
         
         iv = closest_row['impliedVolatility']
         

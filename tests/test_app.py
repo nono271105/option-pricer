@@ -12,12 +12,14 @@ import sys
 import os
 import time
 import threading
-from unittest.mock import patch, MagicMock
+import logging
+from unittest.mock import patch, MagicMock, PropertyMock
 from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
 import pytest
+import requests
 
 # ── path setup ──────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -229,6 +231,100 @@ class TestDataFetcher:
         mock_ticker_cls.return_value.info = {}
         name = self.fetcher.get_company_name("XYZ")
         assert name == "XYZ"
+
+    @patch("data_fetcher.yf.Ticker")
+    def test_option_chain_cached_per_expiry(self, mock_ticker_cls):
+        mock_instance = mock_ticker_cls.return_value
+        prop_mock = PropertyMock(return_value=["2026-12-18"])
+        type(mock_instance).options = prop_mock
+        mock_chain = MagicMock()
+        mock_instance.option_chain.return_value = mock_chain
+
+        dt = datetime(2026, 12, 18)
+        chain1, d1 = self.fetcher.get_option_data_chain("AAPL", dt)
+        chain2, d2 = self.fetcher.get_option_data_chain("AAPL", dt)
+
+        assert chain1 == mock_chain
+        assert chain2 == mock_chain
+        assert d1 == d2 == "2026-12-18"
+        mock_instance.option_chain.assert_called_once_with("2026-12-18")
+        assert prop_mock.call_count == 1
+
+    @patch("data_fetcher.yf.Ticker")
+    def test_option_chain_failure_not_cached(self, mock_ticker_cls):
+        mock_instance = mock_ticker_cls.return_value
+        mock_instance.options = ["2026-12-18"]
+        mock_chain = MagicMock()
+        mock_instance.option_chain.side_effect = [Exception("API Failure"), mock_chain]
+
+        dt = datetime(2026, 12, 18)
+        res1, d1 = self.fetcher.get_option_data_chain("AAPL", dt)
+        assert res1 is None
+        assert d1 is None
+
+        res2, d2 = self.fetcher.get_option_data_chain("AAPL", dt)
+        assert res2 == mock_chain
+        assert d2 == "2026-12-18"
+
+    @patch("data_fetcher.yf.Ticker")
+    def test_strike_gap_rejected(self, mock_ticker_cls):
+        mock_instance = mock_ticker_cls.return_value
+        mock_instance.options = ["2026-12-18"]
+        mock_chain = MagicMock()
+        mock_chain.calls = pd.DataFrame({
+            "strike": [140.0, 150.0],
+            "bid": [10.0, 5.0],
+            "ask": [11.0, 6.0],
+            "lastPrice": [10.5, 5.5],
+            "impliedVolatility": [0.25, 0.22],
+        })
+        mock_chain.puts = pd.DataFrame({
+            "strike": [140.0, 150.0],
+            "bid": [10.0, 5.0],
+            "ask": [11.0, 6.0],
+            "lastPrice": [10.5, 5.5],
+            "impliedVolatility": [0.25, 0.22],
+        })
+        mock_instance.option_chain.return_value = mock_chain
+
+        dt = datetime(2026, 12, 18)
+        iv, price, expiry = self.fetcher.get_implied_volatility_and_price("AAPL", 500, dt, "call")
+        assert iv is None
+        assert price is None
+        assert expiry == "2026-12-18"
+
+        iv2, price2, expiry2 = self.fetcher.get_implied_volatility_and_price("AAPL", 148, dt, "call")
+        assert iv2 is not None
+        assert price2 is not None
+        assert expiry2 == "2026-12-18"
+
+    @patch("data_fetcher.requests.get")
+    def test_sofr_skips_non_numeric_observation(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "observations": [{"value": "."}, {"value": "5.33"}]
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        rate = self.fetcher.get_sofr_rate()
+        assert rate == pytest.approx(0.0533, abs=1e-6)
+
+    @patch("data_fetcher.requests.get")
+    def test_sofr_error_log_does_not_leak_key(self, mock_get, caplog):
+        self.fetcher.fred_api_key = "SECRET123"
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        err = requests.exceptions.HTTPError("403 Client Error: api_key=SECRET123 for url")
+        err.response = mock_resp
+        mock_get.return_value.raise_for_status.side_effect = err
+
+        with caplog.at_level(logging.WARNING):
+            rate = self.fetcher.get_sofr_rate()
+
+        assert rate is None
+        for record in caplog.records:
+            assert "SECRET123" not in record.message
 
 
 # ============================================================================
