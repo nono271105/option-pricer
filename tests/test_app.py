@@ -316,6 +316,75 @@ class TestStrategyManager:
         assert np.isfinite(metrics["max_gain"])
         assert metrics["max_gain"] == pytest.approx(2.0, abs=0.5)
 
+    def test_metrics_long_put(self):
+        legs = [{"option_type": "put", "position": "long", "strike": 100, "premium": 4}]
+        payoff = self.sm.compute_payoff(legs, self.S_range)
+        metrics = self.sm.compute_metrics(legs, self.S_range, payoff)
+        assert metrics["max_gain"] == pytest.approx(96.0)
+        assert metrics["max_loss"] == pytest.approx(4.0)
+        assert np.isfinite(metrics["max_gain"])
+
+    def test_metrics_short_put(self):
+        legs = [{"option_type": "put", "position": "short", "strike": 100, "premium": 4}]
+        payoff = self.sm.compute_payoff(legs, self.S_range)
+        metrics = self.sm.compute_metrics(legs, self.S_range, payoff)
+        assert metrics["max_gain"] == pytest.approx(4.0)
+        assert metrics["max_loss"] == pytest.approx(96.0)
+        assert np.isfinite(metrics["max_loss"])
+
+    def test_metrics_short_call(self):
+        legs = [{"option_type": "call", "position": "short", "strike": 100, "premium": 5}]
+        payoff = self.sm.compute_payoff(legs, self.S_range)
+        metrics = self.sm.compute_metrics(legs, self.S_range, payoff)
+        assert metrics["max_loss"] == np.inf
+        assert metrics["max_gain"] == pytest.approx(5.0)
+
+    def test_metrics_short_strangle(self):
+        legs = [
+            {"option_type": "call", "position": "short", "strike": 105, "premium": 2},
+            {"option_type": "put",  "position": "short", "strike": 95,  "premium": 2},
+        ]
+        payoff = self.sm.compute_payoff(legs, self.S_range)
+        metrics = self.sm.compute_metrics(legs, self.S_range, payoff)
+        assert metrics["max_loss"] == np.inf
+        assert metrics["max_gain"] == pytest.approx(4.0)
+
+    def test_metrics_long_iron_condor(self):
+        legs = [
+            {"option_type": "put",  "position": "long",  "strike": 92.5,  "premium": 1.0},
+            {"option_type": "put",  "position": "short", "strike": 97.5,  "premium": 2.0},
+            {"option_type": "call", "position": "short", "strike": 102.5, "premium": 2.0},
+            {"option_type": "call", "position": "long",  "strike": 107.5, "premium": 1.0},
+        ]
+        payoff = self.sm.compute_payoff(legs, self.S_range)
+        metrics = self.sm.compute_metrics(legs, self.S_range, payoff)
+        assert metrics["max_gain"] == pytest.approx(2.0)
+        assert metrics["max_loss"] == pytest.approx(3.0)
+        assert np.isfinite(metrics["max_gain"])
+        assert np.isfinite(metrics["max_loss"])
+
+    def test_build_legs_strikes_distinct_low_price(self):
+        mock_data_fetcher = MagicMock()
+        mock_data_fetcher.get_implied_volatility_and_price.return_value = (None, None, None)
+        option_models = OptionModels()
+        maturity_dt = datetime.now() + timedelta(days=30)
+        legs, _ = self.sm.build_legs(
+            strategy_name="Bull Call Spread",
+            S=8.0,
+            T=30 / 365.0,
+            r=0.05,
+            sigma=0.2,
+            q=0.0,
+            maturity_datetime=maturity_dt,
+            ticker="AAPL",
+            data_fetcher=mock_data_fetcher,
+            option_models=option_models,
+        )
+        assert len(legs) == 2
+        assert legs[0]["strike"] != legs[1]["strike"]
+        assert legs[0]["strike"] == 8.0
+        assert legs[1]["strike"] == 8.4
+
     # ── compute_greeks (agrégation) ─────────────────────────────────────
 
     def test_straddle_greeks_near_zero_delta(self):

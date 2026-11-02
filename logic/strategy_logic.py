@@ -163,7 +163,7 @@ class StrategyManager:
         legs = []
         T_effective = T
         for leg_def in definition:
-            strike = round(S * (1 + leg_def["offset"]))
+            strike = round(S * (1 + leg_def["offset"]), 2)
 
             # valorisation hybride de la jambe : extraction de la cotation réelle ou pricing théorique si illiquide
             premium, T_leg = self._get_premium(
@@ -287,14 +287,17 @@ class StrategyManager:
 
         breakevens = sorted(set(breakevens))
 
-        # extraction des bornes de rentabilité théorique
-        max_gain = float(np.max(payoff))
-        max_loss = float(np.min(payoff))
+        sign = lambda leg: 1 if leg["position"] == "long" else -1
+        net_calls = sum(sign(l) for l in legs if l["option_type"] == "call")
 
-        # détection du risque ou gain asymétrique illimité
-        if payoff[-1] > payoff[-2] or payoff[0] > payoff[1]:
+        candidates = np.array(sorted({0.0, *(float(l["strike"]) for l in legs)}))
+        vals = self.compute_payoff(legs, candidates)
+        max_gain = float(vals.max())
+        max_loss = float(vals.min())
+
+        if net_calls > 0:
             max_gain = np.inf
-        if payoff[-1] < payoff[-2] or payoff[0] < payoff[1]:
+        if net_calls < 0:
             max_loss = -np.inf
 
         return {
