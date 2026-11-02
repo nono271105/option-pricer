@@ -1,6 +1,7 @@
 # Pipeline de construction et d'interpolation de la surface 3D de volatilité implicite
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
 from typing import Optional, Tuple, Dict
@@ -135,28 +136,39 @@ class ImpliedVolatilitySurface:
             Dict: {'expiration_date': option_chain, ...}
         """
         try:
-            import yfinance as yf
-            ticker = yf.Ticker(ticker_symbol)
-            expirations = ticker.options
-            
+            expirations = self.data_fetcher.get_available_expiries(ticker_symbol)
             if not expirations:
                 logger.warning("Aucune date d'expiration trouvée pour %s", ticker_symbol)
                 return {}
-            
-            # troncature temporelle de la profondeur d'analyse
-            expirations = expirations[:NUM_EXPIRATIONS]
-            
-            option_chains = {}
-            for exp_date in expirations:
+
+            today = datetime.now().date()
+            valid_expiries = []
+            for exp_str in expirations:
                 try:
-                    opt_chain = ticker.option_chain(exp_date)
-                    option_chains[exp_date] = opt_chain
-                except Exception as e:
-                    logger.warning("Erreur lors de la récupération de %s: %s", exp_date, e)
+                    exp_date = datetime.strptime(exp_str, '%Y-%m-%d').date()
+                    days = (exp_date - today).days
+                    if MIN_DAYS_TO_MATURITY <= days <= MAX_DAYS_TO_MATURITY:
+                        valid_expiries.append(exp_str)
+                except ValueError:
                     continue
-            
+
+            valid_expiries = valid_expiries[:NUM_EXPIRATIONS]
+            if not valid_expiries:
+                return {}
+
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                chains = list(executor.map(
+                    lambda exp: self.data_fetcher.get_option_chain_for_expiry(ticker_symbol, exp),
+                    valid_expiries
+                ))
+
+            option_chains = {
+                exp: chain
+                for exp, chain in zip(valid_expiries, chains)
+                if chain is not None
+            }
             return option_chains
-        
+
         except Exception as e:
             logger.warning("Erreur lors de la récupération des chaînes d'options: %s", e)
             return {}
@@ -445,7 +457,13 @@ class ImpliedVolatilitySurface:
             Tuple: (raw_data_df, (X_grid, Y_grid, Z_grid)) ou (None, None) si erreur
         """
         logger.info("Extraction de la surface IV pour %s...", ticker_symbol)
-        
+
+        if current_price is None:
+            current_price = self.data_fetcher.get_live_price(ticker_symbol)
+            if current_price is None:
+                logger.warning("Impossible de récupérer le prix pour %s", ticker_symbol)
+                return None, None
+
         # récupération de l'échantillon pré-traité
         surface_data = self.extract_iv_surface_data(
             ticker_symbol, current_price, current_rate, current_dividend,
