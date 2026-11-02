@@ -386,11 +386,15 @@ def calculate_crr(
         sigma_used = iv if iv is not None else (_store.historical_vol or 0.20)
         sigma_source = "IV" if iv is not None else "Historique"
 
-        price = _crr_models.cox_ross_rubinstein_price(S_f, K_f, T, r_f, q_f, sigma_used, N_i, option_type)
+        price = _crr_models.cox_ross_rubinstein_price(
+            S=S_f, K=K_f, T=T, r=r_f, sigma=sigma_used, q=q_f, N=N_i, option_type=option_type
+        )
         price = round(float(price), 4)
 
         # Grecs bruts CRR, puis signe de la position appliqué
-        raw_greeks = _crr_models.calculate_greeks_crr(S_f, K_f, T, r_f, q_f, sigma_used, N_i, option_type)
+        raw_greeks = _crr_models.calculate_greeks_crr(
+            S=S_f, K=K_f, T=T, r=r_f, sigma=sigma_used, q=q_f, N=N_i, option_type=option_type
+        )
         sign = 1 if position == "long" else -1
         greeks = {k: round(sign * float(v), 6) for k, v in raw_greeks.items()}
 
@@ -398,20 +402,22 @@ def calculate_crr(
 
         # Courbes grecs (différences finies sur CRR : plus lent, N réduit)
         n_curve = min(N_i, 100)
-        greek_curves = {}
+        greek_names = ("delta", "gamma", "theta", "vega", "rho")
+        greek_curves = {f"{gn}_data": [] for gn in greek_names}
         s_min, s_max = S_f * 0.6, S_f * 1.4
         spots = np.linspace(s_min, s_max, 60)
-        for greek_name in ("delta", "gamma", "theta", "vega", "rho"):
-            curve = []
-            for s in spots:
-                try:
-                    g = _crr_models.calculate_greeks_crr(
-                        float(s), K_f, T, r_f, q_f, sigma_used, n_curve, option_type
-                    )
-                    curve.append({"spot": round(float(s), 2), "value": round(sign * g[greek_name], 6)})
-                except Exception:
-                    curve.append({"spot": round(float(s), 2), "value": None})
-            greek_curves[f"{greek_name}_data"] = curve
+        for s in spots:
+            spot_val = round(float(s), 2)
+            try:
+                g = _crr_models.calculate_greeks_crr(
+                    S=float(s), K=K_f, T=T, r=r_f, sigma=sigma_used, q=q_f, N=n_curve, option_type=option_type
+                )
+                for gn in greek_names:
+                    val = round(sign * g[gn], 6) if g and gn in g and g[gn] is not None else None
+                    greek_curves[f"{gn}_data"].append({"spot": spot_val, "value": val})
+            except Exception:
+                for gn in greek_names:
+                    greek_curves[f"{gn}_data"].append({"spot": spot_val, "value": None})
 
         if option_type == "call":
             breakeven = round(K_f + price, 2) if position == "long" else round(K_f - price, 2)

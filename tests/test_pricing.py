@@ -243,7 +243,9 @@ class TestCRR:
 
     def test_crr_call_american_atm(self):
         expected = GOLDEN["crr_call_american_atm"]
-        result = crr_models.cox_ross_rubinstein_price(100, 100, 1.0, 0.05, 0.00, 0.20, 200, "call")
+        result = crr_models.cox_ross_rubinstein_price(
+            S=100, K=100, T=1.0, r=0.05, sigma=0.20, q=0.00, N=200, option_type="call"
+        )
         assert result == pytest.approx(expected, abs=TOL), (
             f"CRR call ATM: expected={expected:.4f}, got={result:.4f}, "
             f"diff={abs(result - expected):.4f}, pct={_pct(result, expected)}"
@@ -251,7 +253,9 @@ class TestCRR:
 
     def test_crr_put_american_atm(self):
         expected = GOLDEN["crr_put_american_atm"]
-        result = crr_models.cox_ross_rubinstein_price(100, 100, 1.0, 0.05, 0.00, 0.20, 200, "put")
+        result = crr_models.cox_ross_rubinstein_price(
+            S=100, K=100, T=1.0, r=0.05, sigma=0.20, q=0.00, N=200, option_type="put"
+        )
         assert result == pytest.approx(expected, abs=TOL), (
             f"CRR put ATM: expected={expected:.4f}, got={result:.4f}, "
             f"diff={abs(result - expected):.4f}, pct={_pct(result, expected)}"
@@ -259,7 +263,9 @@ class TestCRR:
 
     def test_crr_put_american_itm(self):
         expected = GOLDEN["crr_put_american_itm"]
-        result = crr_models.cox_ross_rubinstein_price(100, 110, 0.5, 0.05, 0.00, 0.25, 200, "put")
+        result = crr_models.cox_ross_rubinstein_price(
+            S=100, K=110, T=0.5, r=0.05, sigma=0.25, q=0.00, N=200, option_type="put"
+        )
         assert result == pytest.approx(expected, abs=TOL), (
             f"CRR put ITM: expected={expected:.4f}, got={result:.4f}, "
             f"diff={abs(result - expected):.4f}, pct={_pct(result, expected)}"
@@ -268,7 +274,9 @@ class TestCRR:
     def test_american_put_ge_european(self):
         """Le put américain vaut toujours ≥ au put européen (early exercise premium ≥ 0)."""
         bsm_put = models.black_scholes_price(100, 100, 1.0, 0.05, 0.20, 0.00, "put")
-        crr_put = crr_models.cox_ross_rubinstein_price(100, 100, 1.0, 0.05, 0.00, 0.20, 200, "put")
+        crr_put = crr_models.cox_ross_rubinstein_price(
+            S=100, K=100, T=1.0, r=0.05, sigma=0.20, q=0.00, N=200, option_type="put"
+        )
         premium = crr_put - bsm_put
         assert crr_put >= bsm_put - 1e-6, (
             f"American put ({crr_put:.4f}) < European put ({bsm_put:.4f}), "
@@ -278,8 +286,29 @@ class TestCRR:
     def test_crr_greeks_requires_min_steps(self):
         with pytest.raises(ValueError, match="≥ 3"):
             crr_models.calculate_greeks_crr(
-                100, 100, 1.0, 0.05, 0.00, 0.20, 2, "call"
+                S=100, K=100, T=1.0, r=0.05, sigma=0.20, q=0.00, N=2, option_type="call"
             )
+
+    def test_crr_call_greeks_converge_to_bsm(self):
+        S, K, T, r, sigma, q, N = 100, 100, 1.0, 0.05, 0.20, 0.0, 800
+        crr_g = crr_models.calculate_greeks_crr(
+            S=S, K=K, T=T, r=r, sigma=sigma, q=q, N=N, option_type="call"
+        )
+        bsm_g = models.calculate_greeks(
+            S=S, K=K, T=T, r=r, sigma=sigma, q=q, option_type="call"
+        )
+        for greek in ("delta", "gamma", "theta", "vega", "rho"):
+            assert crr_g[greek] == pytest.approx(bsm_g[greek], rel=5e-3), (
+                f"Écart trop grand pour {greek}: CRR={crr_g[greek]}, BSM={bsm_g[greek]}"
+            )
+
+    def test_crr_signature_is_keyword_consistent(self):
+        import inspect
+        expected_params = ["self", "S", "K", "T", "r", "sigma", "q", "N", "option_type"]
+        sig_price = inspect.signature(CRRModels.cox_ross_rubinstein_price)
+        sig_greeks = inspect.signature(CRRModels.calculate_greeks_crr)
+        assert list(sig_price.parameters.keys()) == expected_params
+        assert list(sig_greeks.parameters.keys()) == expected_params
 
 
 # ═══════════════════════════════════════════════════════════════════════════

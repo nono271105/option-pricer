@@ -13,8 +13,8 @@ class CRRModels:
         K: float, 
         T: float, 
         r: float, 
-        q: float, 
         sigma: float, 
+        q: float, 
         N: int, 
         option_type: Literal['call', 'put']
     ) -> float:
@@ -94,8 +94,8 @@ class CRRModels:
         K: float, 
         T: float, 
         r: float, 
-        q: float, 
         sigma: float, 
+        q: float, 
         N: int, 
         option_type: Literal['call', 'put'],
     ) -> Dict[str, float]:
@@ -179,8 +179,9 @@ class CRRModels:
         theta_daily = theta_annual / 365.0
 
         # calcul numérique pour les sensibilités de second ordre
-        def crr_price(sigma_local: float, r_local: float) -> float:
-            return self.cox_ross_rubinstein_price(S, K, T, r_local, q, sigma_local, N, option_type)
+        def crr_price(sigma_local, r_local):
+            return self.cox_ross_rubinstein_price(
+                S=S, K=K, T=T, r=r_local, sigma=sigma_local, q=q, N=N, option_type=option_type)
 
         # choc infinitésimal sur la volatilité
         eps_sigma = 0.01
