@@ -170,6 +170,16 @@ def validate_barrier_type(barrier_type: str) -> None:
         )
 
 
+def validate_rebate(rebate: float) -> None:
+    """Rebate fini et >= 0."""
+    _check_finite("rebate", rebate)
+    if rebate < 0:
+        raise ValueError(
+            f"VALIDATION_REBATE_NEGATIVE: rebate={rebate} doit être >= 0.",
+            "VALIDATION_REBATE_NEGATIVE",
+        )
+
+
 def validate_averaging(averaging: str) -> None:
     """averaging doit être 'arithmetic' ou 'geometric'."""
     if averaging not in VALID_AVERAGING:

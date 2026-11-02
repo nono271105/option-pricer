@@ -30,6 +30,7 @@ from validation import (
     validate_pricing_params, validate_N_crr, validate_option_type,
     validate_n_sims, validate_n_steps, validate_barrier_type,
     validate_averaging, validate_exotic_type, validate_r, validate_q,
+    validate_rebate,
     _validation_error_response,
 )
 
@@ -259,9 +260,7 @@ def get_available_expiries(ticker: str) -> Dict:
     """Retourne la liste des dates d'expiration disponibles pour un ticker."""
     ticker = ticker.strip().upper()
     try:
-        import yfinance as yf
-        t = yf.Ticker(ticker)
-        expiries = list(t.options)
+        expiries = _data_fetcher.get_available_expiries(ticker)
         return {"expiries": expiries, "error": None}
     except Exception as e:
         return {"expiries": [], "error": str(e)}
@@ -616,13 +615,14 @@ def price_exotic(
     n_sims: int = 50_000,
     n_steps: int = 252,
     seed: int = 42,
+    rebate: float = 0.0,
 ) -> Dict:
     """
     Valorise une option exotique.
 
-    exotic_type: 'barrier_analytical' | 'barrier_mc' |
-                 'asian_mc' | 'lookback_mc' |
-                 'digital_analytical' | 'digital_mc'
+    exotic_type in {'barrier', 'asian', 'lookback', 'digital'} ;
+    barrier et digital renvoient analytique + MC,
+    asian et lookback uniquement MC.
 
     Retourne:
         {
@@ -636,8 +636,12 @@ def price_exotic(
         }
     """
     try:
+        res_mc = None
+        res_ana = None
         # ── Validation des entrées ───────────────────────────────────────────
         S_f, K_f, r_f, q_f = float(S), float(K), float(r), float(q)
+        rebate_f = float(rebate)
+        validate_rebate(rebate_f)
         mat_dt = _parse_date(maturity_date, 90)
         T_days_i = max((mat_dt.date() - date.today()).days, 1)
         T = T_days_i / 365.0
@@ -661,19 +665,24 @@ def price_exotic(
         if exotic_type == "barrier":
             # Analytical
             try:
-                res_ana = price_barrier_analytical(S_f, K_f, T, r_f, sigma, q_f, float(barrier),
-                                                   option_type, barrier_type)
+                res_ana = price_barrier_analytical(
+                    S_f, K_f, T, r_f, sigma, q_f, float(barrier),
+                    option_type, barrier_type, rebate=rebate_f,
+                )
                 results["analytical"] = {
                     "price": float(res_ana.price),
                     "method": res_ana.method
                 }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Erreur pricing barrière analytique : %s", e, exc_info=True)
             # Monte Carlo
             try:
-                res_mc = price_barrier_mc(S_f, K_f, T, r_f, sigma, q_f, float(barrier),
-                                          option_type, barrier_type, n_sims, n_steps, seed)
-            except Exception:
+                res_mc = price_barrier_mc(
+                    S_f, K_f, T, r_f, sigma, q_f, float(barrier),
+                    option_type, barrier_type, n_sims, n_steps, seed, rebate=rebate_f,
+                )
+            except Exception as e:
+                logger.warning("Erreur pricing barrière MC : %s", e, exc_info=True)
                 res_mc = None
 
         elif exotic_type == "asian":
@@ -690,12 +699,13 @@ def price_exotic(
                     "price": float(res_ana.price),
                     "method": res_ana.method
                 }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Erreur pricing digital analytique : %s", e, exc_info=True)
             try:
                 res_mc = price_digital_mc(S_f, K_f, T, r_f, sigma, q_f, option_type, payoff_amount,
                                           n_sims, n_steps, seed)
-            except Exception:
+            except Exception as e:
+                logger.warning("Erreur pricing digital MC : %s", e, exc_info=True)
                 res_mc = None
         else:
             # Unreachable grâce à validate_exotic_type mais garde la lisibilité
@@ -703,7 +713,7 @@ def price_exotic(
 
         paths_data = None
         dist_data = None
-        if "res_mc" in locals() and res_mc is not None:
+        if res_mc is not None:
             results["mc"] = {
                 "price": float(res_mc.price),
                 "method": res_mc.method,

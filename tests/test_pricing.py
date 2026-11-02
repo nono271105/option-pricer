@@ -482,6 +482,46 @@ class TestBarrierMC:
             f"BGK-adjusted ({adjusted:.4f}) ~= naive ({naive:.4f}) : correction inactive?"
         )
 
+    @pytest.mark.slow
+    def test_barrier_mc_knockout_rebate_discounted_at_hit(self):
+        """Knock-out : rebate actualisé à la première date de touche."""
+        S, K, T, r, sigma, q, H = 100.0, 1000.0, 2.0, 0.08, 0.30, 0.0, 80.0
+        rebate = 10.0
+        n_sims, n_steps, seed = 100_000, 252, 42
+        ana = price_barrier_analytical(
+            S, K, T, r, sigma, q, H, "call", "down-and-out", rebate=rebate
+        )
+        mc = price_barrier_mc(
+            S, K, T, r, sigma, q, H, "call", "down-and-out",
+            n_sims=n_sims, n_steps=n_steps, seed=seed, rebate=rebate,
+        )
+        assert abs(mc.price - ana.price) < 3 * mc.std_error
+
+    def test_barrier_mc_knockin_rebate_paid_at_maturity(self):
+        """Knock-in : rebate payé à maturité seulement si la barrière n'est jamais touchée."""
+        S, K, T, r, sigma, q, H = 100.0, 1000.0, 2.0, 0.08, 0.30, 0.0, 80.0
+        rebate = 10.0
+        n_sims, n_steps, seed = 50_000, 252, 42
+
+        mc_no_rebate = price_barrier_mc(
+            S, K, T, r, sigma, q, H, "call", "down-and-in",
+            n_sims=n_sims, n_steps=n_steps, seed=seed, rebate=0.0,
+        )
+        mc_rebate = price_barrier_mc(
+            S, K, T, r, sigma, q, H, "call", "down-and-in",
+            n_sims=n_sims, n_steps=n_steps, seed=seed, rebate=rebate,
+        )
+
+        paths = _simulate_paths(S, T, r, sigma, q, n_steps, n_sims, seed)
+        beta = 0.5825971579
+        adj_barrier = H * np.exp(+beta * sigma * np.sqrt(T / n_steps))
+        breached = (paths <= adj_barrier).any(axis=1)
+        p_unhit = float((~breached).mean())
+        expected_diff = rebate * np.exp(-r * T) * p_unhit
+
+        diff = mc_rebate.price - mc_no_rebate.price
+        assert diff == pytest.approx(expected_diff, rel=1e-4)
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # DIGITALES

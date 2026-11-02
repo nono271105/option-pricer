@@ -228,7 +228,8 @@ interface EelAPI {
     payoff_amount?: number,
     n_sims?: number,
     n_steps?: number,
-    seed?: number
+    seed?: number,
+    rebate?: number
   ): () => Promise<ExoticResult>;
 
   // Stratégies

@@ -43,6 +43,7 @@ export function ExoticsTab() {
   const payoffAmtRef  = useRef<HTMLInputElement>(null);
   const nSimsRef      = useRef<HTMLInputElement>(null);
   const nStepsRef     = useRef<HTMLInputElement>(null);
+  const rebateRef     = useRef<HTMLInputElement>(null);
 
   const [state, setState] = useState<ExoticState>({
     results: null,
@@ -76,6 +77,7 @@ export function ExoticsTab() {
       const payoffAmt = parseFloat(payoffAmtRef.current?.value || '1');
       const nSims = parseInt(nSimsRef.current?.value || '50000');
       const nSteps = parseInt(nStepsRef.current?.value || '252');
+      const rebate = showBarrier ? Math.max(0, parseFloat(rebateRef.current?.value || '0') || 0) : 0;
 
       if (!window.eel) {
         setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
@@ -85,7 +87,7 @@ export function ExoticsTab() {
       const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
       const res = await window.eel.price_exotic(
         exoticType, ticker, S, K, matStr, market.r, market.q, optType,
-        barrierVal, barrierType, averaging, payoffAmt, nSims, nSteps, 42
+        barrierVal, barrierType, averaging, payoffAmt, nSims, nSteps, 42, rebate
       )();
 
       if (res.error) {
@@ -194,6 +196,9 @@ export function ExoticsTab() {
                     <option value="up-and-out">Up-and-Out</option>
                     <option value="up-and-in">Up-and-In</option>
                   </select>
+                </FR>
+                <FR label="Rebate ($)">
+                  <input ref={rebateRef} defaultValue="0" type="number" min="0" step="0.5" className={INP} />
                 </FR>
               </>
             )}

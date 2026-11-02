@@ -224,29 +224,28 @@ def price_barrier_mc(
     phi = 1 if option_type == "call" else -1
     intrinsic = np.maximum(phi * (S_T - K), 0)
 
-    path_max = paths.max(axis=1)
-    path_min = paths.min(axis=1)
-
     is_up = "up" in barrier_type
     is_out = "out" in barrier_type
 
     beta = 0.5825971579
     if is_up:
         adj_barrier = barrier * np.exp(-beta * sigma * np.sqrt(T / n_steps))
-        breached = path_max >= adj_barrier
     else:
         adj_barrier = barrier * np.exp(+beta * sigma * np.sqrt(T / n_steps))
-        breached = path_min <= adj_barrier
 
+    hit_mat = (paths >= adj_barrier) if is_up else (paths <= adj_barrier)
+    breached = hit_mat.any(axis=1)
+    first_hit = hit_mat.argmax(axis=1)          # indice du premier pas franchi
+    dt = T / n_steps
+    disc_T = np.exp(-r * T)
+    alive = ~breached if is_out else breached
+    payoffs = np.where(alive, intrinsic, rebate)  # non actualisé, pour l'histogramme
     if is_out:
-        alive = ~breached
+        pv = np.where(alive, disc_T * intrinsic, np.exp(-r * first_hit * dt) * rebate)  # rebate payé à la touche
     else:
-        alive = breached
-
-    payoffs = np.where(alive, intrinsic, rebate)
-    discount = np.exp(-r * T)
-    price = discount * payoffs.mean()
-    std_err = discount * payoffs.std() / np.sqrt(n_sims)
+        pv = np.where(alive, disc_T * intrinsic, disc_T * rebate)                        # knock-in : rebate à l'échéance
+    price = pv.mean()
+    std_err = pv.std() / np.sqrt(n_sims)
     ci_95 = (float(price - 1.96 * std_err), float(price + 1.96 * std_err))
 
     # extraction d'un sous-ensemble représentatif pour l'affichage visuel

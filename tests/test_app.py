@@ -609,3 +609,31 @@ class TestVolatilitySmileLogic:
         assert iv_interp is not None
         assert len(s_interp) == 200
         assert len(df) >= 4  # au moins quelques points valides
+
+
+# ============================================================================
+#  API EXOTICS
+# ============================================================================
+
+class TestApiExotics:
+    """Tests pour l'API des options exotiques."""
+
+    def test_price_exotic_rebate_positional_compat(self):
+        """Vérifie la compatibilité positionnelle (15 vs 16 arguments)."""
+        import api
+        with patch.object(api._data_fetcher, "get_implied_volatility_and_price", return_value=(0.20, None, None)):
+            res15 = api.price_exotic(
+                "barrier", "AAPL", 100.0, 100.0, "2027-12-31", 0.05, 0.0, "call",
+                90.0, "down-and-out", "arithmetic", 1.0, 1000, 50, 42
+            )
+            assert res15.get("error") is None
+            assert res15["results"]["analytical"]["price"] > 0
+
+            res16 = api.price_exotic(
+                "barrier", "AAPL", 100.0, 100.0, "2027-12-31", 0.05, 0.0, "call",
+                90.0, "down-and-out", "arithmetic", 1.0, 1000, 50, 42, 5.0
+            )
+            assert res16.get("error") is None
+            assert res16["price"] > res15["price"]
+            assert res16["results"]["analytical"]["price"] > res15["results"]["analytical"]["price"]
+            assert res16["results"]["mc"]["price"] > res15["results"]["mc"]["price"]
