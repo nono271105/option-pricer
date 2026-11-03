@@ -175,9 +175,31 @@ def fetch_market_data(ticker: str) -> Dict[str, Any]:
                     results[key] = None
 
         S = _safe(results["price"])
-        r = _safe(results["sofr"]) if results["sofr"] is not None else 0.05
-        q = _safe(results["div"]) if results["div"] is not None else 0.0
-        hist_vol = _safe(results["vol"]) if results["vol"] is not None else 0.20
+        if S is None:
+            raise DataSourceError(
+                f"Prix introuvable pour {ticker}. Vérifiez le symbole.", status_code=502
+            )
+
+        warnings: List[str] = []
+
+        if results["sofr"] is not None:
+            r = _safe(results["sofr"])
+        else:
+            r = 0.05
+            warnings.append("SOFR indisponible, valeur par défaut 5 %")
+
+        if results["div"] is not None:
+            q = _safe(results["div"])
+        else:
+            q = 0.0
+            warnings.append("Dividende indisponible, valeur par défaut 0 %")
+
+        if results["vol"] is not None:
+            hist_vol = _safe(results["vol"])
+        else:
+            hist_vol = 0.20
+            warnings.append("Volatilité historique indisponible, valeur par défaut 20 %")
+
         company = results["company"] or ticker
 
         return {
@@ -187,8 +209,11 @@ def fetch_market_data(ticker: str) -> Dict[str, Any]:
             "r": r,
             "q": q,
             "hist_vol": hist_vol,
+            "warnings": warnings if warnings else None,
             "error": None,
         }
+    except DataSourceError:
+        raise
     except Exception as e:
         logger.exception("fetch_market_data error for %s", ticker)
         raise DataSourceError(f"Erreur lors de la récupération des données de marché pour {ticker}: {e}")
@@ -219,7 +244,9 @@ def get_option_chain(
         if opt_chain is None or closest_date is None:
             raise DataSourceError(f"Aucune chaîne d'options pour {ticker}")
 
-        S_val = S if S is not None else (_data_fetcher.get_live_price(ticker) or 100.0)
+        S_val = S if S is not None else _data_fetcher.get_live_price(ticker)
+        if S_val is None:
+            raise DataSourceError(f"Prix introuvable pour {ticker}")
         r_val = r if r is not None else 0.05
         q_val = q if q is not None else 0.0
         T = max((datetime.strptime(closest_date, "%Y-%m-%d").date() - date.today()).days / 365.0, 1 / 365)
@@ -471,7 +498,9 @@ def calculate_smile(
             raise DataSourceError(f"Aucune chaîne d'options disponible pour {ticker}")
 
         T = max((datetime.strptime(closest_date, "%Y-%m-%d").date() - date.today()).days / 365.0, 1 / 365)
-        S_val = S if S is not None else (_data_fetcher.get_live_price(ticker) or 100.0)
+        S_val = S if S is not None else _data_fetcher.get_live_price(ticker)
+        if S_val is None:
+            raise DataSourceError(f"Prix introuvable pour {ticker}")
         r_val = r if r is not None else 0.05
         q_val = q if q is not None else 0.0
 
@@ -513,7 +542,9 @@ def calculate_surface(
 ) -> Dict[str, Any]:
     ticker = ticker.strip().upper()
     try:
-        S_val = S if S is not None else (_data_fetcher.get_live_price(ticker) or 100.0)
+        S_val = S if S is not None else _data_fetcher.get_live_price(ticker)
+        if S_val is None:
+            raise DataSourceError(f"Prix introuvable pour {ticker}")
         r_val = r if r is not None else 0.05
         q_val = q if q is not None else 0.0
 

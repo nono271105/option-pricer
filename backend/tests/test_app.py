@@ -26,7 +26,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from cache import DataCache, global_cache
 from data_fetcher import DataFetcher
-from market_data_store import MarketDataStore
 from logic.strategy_logic import StrategyManager
 from logic.simulation_logic import SimulationLogic
 from logic.volatility_smile_logic import VolatilitySmileLogic
@@ -110,24 +109,6 @@ class TestDataCache:
         """global_cache est bien une instance partagée avec TTL 1h."""
         assert isinstance(global_cache, DataCache)
         assert global_cache.ttl == 3600
-
-
-# ============================================================================
-#  MARKET DATA STORE
-# ============================================================================
-
-
-class TestMarketDataStore:
-    """Tests pour market_data_store.py."""
-
-    def test_update_attributes(self):
-        store = MarketDataStore()
-        store.update(S=100.0, r=0.05, q=0.01, ticker="AAPL")
-        assert store.S == 100.0
-        assert store.r == 0.05
-        assert store.q == 0.01
-        assert store.ticker == "AAPL"
-
 
 
 # ============================================================================
@@ -612,28 +593,107 @@ class TestVolatilitySmileLogic:
 
 
 # ============================================================================
-#  API EXOTICS
+#  API EXOTICS (TestClient)
 # ============================================================================
 
 class TestApiExotics:
-    """Tests pour l'API des options exotiques."""
+    """Tests pour l'API des options exotiques via FastAPI TestClient."""
 
     def test_price_exotic_rebate_positional_compat(self):
-        """Vérifie la compatibilité positionnelle (15 vs 16 arguments)."""
-        import api
-        with patch.object(api._data_fetcher, "get_implied_volatility_and_price", return_value=(0.20, None, None)):
-            res15 = api.price_exotic(
-                "barrier", "AAPL", 100.0, 100.0, (date.today() + timedelta(days=400)).isoformat(), 0.05, 0.0, "call",
-                90.0, "down-and-out", "arithmetic", 1.0, 1000, 50, 42
-            )
-            assert res15.get("error") is None
-            assert res15["results"]["analytical"]["price"] > 0
+        """Vérifie la compatibilité positionnelle du paramètre rebate."""
+        from fastapi.testclient import TestClient
+        from main import app
+        import services
 
-            res16 = api.price_exotic(
-                "barrier", "AAPL", 100.0, 100.0, (date.today() + timedelta(days=400)).isoformat(), 0.05, 0.0, "call",
-                90.0, "down-and-out", "arithmetic", 1.0, 1000, 50, 42, 5.0
-            )
-            assert res16.get("error") is None
-            assert res16["price"] > res15["price"]
-            assert res16["results"]["analytical"]["price"] > res15["results"]["analytical"]["price"]
-            assert res16["results"]["mc"]["price"] > res15["results"]["mc"]["price"]
+        client = TestClient(app)
+
+        with patch.object(services._data_fetcher, "get_implied_volatility_and_price", return_value=(0.20, None, None)):
+            maturity = (date.today() + timedelta(days=400)).isoformat()
+
+            # Sans rebate (rebate=0 par défaut)
+            res15 = client.post("/api/exotic", json={
+                "exotic_type": "barrier",
+                "ticker": "AAPL",
+                "S": 100.0,
+                "K": 100.0,
+                "maturity_date": maturity,
+                "r": 0.05,
+                "q": 0.0,
+                "option_type": "call",
+                "barrier": 90.0,
+                "barrier_type": "down-and-out",
+                "averaging": "arithmetic",
+                "payoff_amount": 1.0,
+                "n_sims": 1000,
+                "n_steps": 50,
+                "seed": 42,
+                "rebate": 0.0,
+            })
+            assert res15.status_code == 200
+            data15 = res15.json()
+            assert data15.get("error") is None
+            assert data15["results"]["analytical"]["price"] > 0
+
+            # Avec rebate=5.0
+            res16 = client.post("/api/exotic", json={
+                "exotic_type": "barrier",
+                "ticker": "AAPL",
+                "S": 100.0,
+                "K": 100.0,
+                "maturity_date": maturity,
+                "r": 0.05,
+                "q": 0.0,
+                "option_type": "call",
+                "barrier": 90.0,
+                "barrier_type": "down-and-out",
+                "averaging": "arithmetic",
+                "payoff_amount": 1.0,
+                "n_sims": 1000,
+                "n_steps": 50,
+                "seed": 42,
+                "rebate": 5.0,
+            })
+            assert res16.status_code == 200
+            data16 = res16.json()
+            assert data16.get("error") is None
+            assert data16["price"] > data15["price"]
+            assert data16["results"]["analytical"]["price"] > data15["results"]["analytical"]["price"]
+            assert data16["results"]["mc"]["price"] > data15["results"]["mc"]["price"]
+
+
+class TestMarketDataDefaultsAndWarnings:
+    """Tests Phase 2b : gestion explicite des erreurs et avertissements market-data."""
+
+    @patch("services._data_fetcher.get_live_price", return_value=None)
+    def test_market_data_price_missing_raises_error(self, mock_price):
+        from fastapi.testclient import TestClient
+        from main import app
+        client = TestClient(app)
+        res = client.post("/api/market-data", json={"ticker": "UNKNOWN"})
+        assert res.status_code == 502
+        assert "Prix introuvable" in res.json().get("error", "")
+
+    @patch("services._data_fetcher.get_live_price", return_value=150.0)
+    @patch("services._data_fetcher.get_sofr_rate", return_value=None)
+    @patch("services._data_fetcher.get_dividend_yield", return_value=None)
+    @patch("services._data_fetcher.get_historical_volatility", return_value=None)
+    @patch("services._data_fetcher.get_company_name", return_value="Test Corp")
+    def test_market_data_fallbacks_with_warnings(
+        self, mock_name, mock_vol, mock_div, mock_sofr, mock_price
+    ):
+        from fastapi.testclient import TestClient
+        from main import app
+        client = TestClient(app)
+        res = client.post("/api/market-data", json={"ticker": "TEST"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["S"] == 150.0
+        assert data["r"] == 0.05
+        assert data["q"] == 0.0
+        assert data["hist_vol"] == 0.20
+        assert data["warnings"] is not None
+        assert len(data["warnings"]) == 3
+        assert any("SOFR" in w for w in data["warnings"])
+        assert any("Dividende" in w for w in data["warnings"])
+        assert any("Volatilité" in w for w in data["warnings"])
+
