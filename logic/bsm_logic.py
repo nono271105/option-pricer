@@ -135,12 +135,12 @@ class OptionModels:
         theta = theta_part1 + theta_part2 + theta_part3
         theta_daily = theta / 365.0
 
-        # sensibilité aux taux d'intérêt, normalisée par point de base
+        # sensibilité aux taux d'intérêt, normalisée pour 100 points de base (1% de taux)
         if option_type == 'call':
             rho = K * T * np.exp(-r * T) * norm.cdf(d2)
         else: # put
             rho = -K * T * np.exp(-r * T) * norm.cdf(-d2)
-        rho = rho / 100.0  # sensibilté à une variation de 1% du taux d'intérêt
+        rho = rho / 100.0  # sensibilité à une variation de 100 points de base (1%) du taux d'intérêt
         
         return {
             'delta': delta,
