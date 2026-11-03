@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useMarket } from '../App';
 import Plot from './Plot';
+import { runSimulation } from '../../lib/api';
 
 interface SimState {
   vols: number[];
@@ -41,16 +42,11 @@ export function SimulationTab() {
       const sMax = parseInt(sMaxRef.current?.value || String(Math.round(S * 1.3)));
       const sStep = parseInt(sStepRef.current?.value || String(Math.round(S * 0.05)));
 
-      if (!window.eel) {
-        setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
-        return;
-      }
-
-      const res = await window.eel.run_simulation(
+      const res = await runSimulation(
         K, T_days, market.r, market.q,
         volMin, volMax, volStep,
         sMin, sMax, sStep, optType
-      )();
+      );
 
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));

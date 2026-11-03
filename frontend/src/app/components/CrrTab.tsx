@@ -1,11 +1,10 @@
 import React, { useState, useRef } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
+import { calculateCrr } from '../../lib/api';
+import type { Greeks, PricePoint, GreekPoint } from '../../types/api';
 
 type GreekKey = 'delta' | 'gamma' | 'theta' | 'vega' | 'rho';
-interface Greeks { delta: number; gamma: number; theta: number; vega: number; rho: number; }
-interface PricePoint { spot: number; payoff: number; }
-interface GreekPoint { spot: number; value: number | null; }
 
 interface CrrState {
   price: number | null;
@@ -61,11 +60,9 @@ export function CrrTab() {
       const optType = optTypeRef.current?.value || 'call';
       const position = positionRef.current?.value || 'long';
 
-      if (!window.eel) {
-        setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
-        return;
-      }
-      const res = await window.eel.calculate_crr(ticker, S, K, matStr, market.r, market.q, N, optType, position)();
+      const res = await calculateCrr(
+        ticker, S, K, matStr, market.r, market.q, N, optType, position, market.histVol
+      );
 
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
@@ -73,11 +70,11 @@ export function CrrTab() {
       }
       const greekKey = state.activeGreek;
       const allGreekData: Record<GreekKey, GreekPoint[]> = {
-        delta: (res as any).delta_data || [],
-        gamma: (res as any).gamma_data || [],
-        theta: (res as any).theta_data || [],
-        vega:  (res as any).vega_data  || [],
-        rho:   (res as any).rho_data   || [],
+        delta: res.delta_data || [],
+        gamma: res.gamma_data || [],
+        theta: res.theta_data || [],
+        vega:  res.vega_data  || [],
+        rho:   res.rho_data   || [],
       };
       setState(s => ({
         ...s, loading: false, error: null,
@@ -86,7 +83,7 @@ export function CrrTab() {
         allGreekData,
         activeGreekData: allGreekData[greekKey],
         breakeven: res.breakeven, S: res.S, K: res.K,
-        sigma: (res as any).sigma, sigma_source: (res as any).sigma_source,
+        sigma: res.sigma, sigma_source: res.sigma_source,
       }));
     } catch (e: any) {
       setState(s => ({ ...s, loading: false, error: String(e) }));
@@ -103,8 +100,8 @@ export function CrrTab() {
   };
 
   const fmtG = (v?: number, d = 4) => v !== undefined ? v.toFixed(d) : 'N/C';
-  // Le vega du backend est en unités de 1% de vol, on divise par 100
-  const fmtVega = (v?: number) => v !== undefined ? (v / 100).toFixed(4) : 'N/C';
+  // Le vega du backend est déjà normalisé par point de vol (1% de vol)
+  const fmtVega = (v?: number) => v !== undefined ? v.toFixed(4) : 'N/C';
   const gc = (v?: number) => !v ? 'text-[#888888]' : v >= 0 ? 'text-[#00FF00]' : 'text-[#FF3333]';
   const defaultStrike = market.S ? Math.round(market.S) : 290;
   const defaultMat    = getDefaultMaturity();

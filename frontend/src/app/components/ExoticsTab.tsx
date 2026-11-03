@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
+import { priceExotic } from '../../lib/api';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -79,16 +80,26 @@ export function ExoticsTab() {
       const nSteps = parseInt(nStepsRef.current?.value || '252');
       const rebate = showBarrier ? Math.max(0, parseFloat(rebateRef.current?.value || '0') || 0) : 0;
 
-      if (!window.eel) {
-        setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
-        return;
-      }
-
       const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
-      const res = await window.eel.price_exotic(
-        exoticType, ticker, S, K, matStr, market.r, market.q, optType,
-        barrierVal, barrierType, averaging, payoffAmt, nSims, nSteps, 42, rebate
-      )();
+      const res = await priceExotic({
+        exotic_type: exoticType,
+        ticker,
+        S,
+        K,
+        maturity_date: matStr,
+        r: market.r,
+        q: market.q,
+        option_type: optType as any,
+        barrier: barrierVal,
+        barrier_type: barrierType,
+        averaging: averaging as any,
+        payoff_amount: payoffAmt,
+        n_sims: nSims,
+        n_steps: nSteps,
+        seed: 42,
+        rebate,
+        hist_vol: market.histVol,
+      });
 
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));

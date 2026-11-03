@@ -1,12 +1,8 @@
 import React, { useState, useRef } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
-
-// ── Types ────────────────────────────────────────────────────────────────
-
-interface Greeks { delta: number; gamma: number; theta: number; vega: number; rho: number; }
-interface PricePoint { spot: number; payoff: number; }
-interface GreekPoint { spot: number; value: number | null; }
+import { calculateBsm } from '../../lib/api';
+import type { Greeks, PricePoint, GreekPoint } from '../../types/api';
 
 type GreekKey = 'delta' | 'gamma' | 'theta' | 'vega' | 'rho';
 
@@ -70,14 +66,9 @@ export function BsmTab() {
       const optType = optTypeRef.current?.value || 'call';
       const position = positionRef.current?.value || 'long';
 
-      if (!window.eel) {
-        setState(s => ({ ...s, loading: false, error: 'Eel non disponible (mode développement)' }));
-        return;
-      }
-
-      const res = await window.eel.calculate_bsm(
-        ticker, S, K, matStr, market.r, market.q, optType, position
-      )();
+      const res = await calculateBsm(
+        ticker, S, K, matStr, market.r, market.q, optType, position, market.histVol
+      );
 
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
@@ -86,11 +77,11 @@ export function BsmTab() {
 
       // Stocke toutes les courbes grecques reçues en une seule fois
       const allGreekData: Record<GreekKey, GreekPoint[]> = {
-        delta: (res as any).delta_data || [],
-        gamma: (res as any).gamma_data || [],
-        theta: (res as any).theta_data || [],
-        vega:  (res as any).vega_data  || [],
-        rho:   (res as any).rho_data   || [],
+        delta: res.delta_data || [],
+        gamma: res.gamma_data || [],
+        theta: res.theta_data || [],
+        vega:  res.vega_data  || [],
+        rho:   res.rho_data   || [],
       };
       const greekKey = state.activeGreek;
 
@@ -104,8 +95,8 @@ export function BsmTab() {
         breakeven: res.breakeven,
         S: res.S,
         K: res.K,
-        sigma: (res as any).sigma,
-        sigma_source: (res as any).sigma_source,
+        sigma: res.sigma,
+        sigma_source: res.sigma_source,
       }));
     } catch (e: any) {
       setState(s => ({ ...s, loading: false, error: String(e) }));
@@ -124,10 +115,9 @@ export function BsmTab() {
   const formatGreek = (val: number | undefined, digits = 4) =>
     val !== undefined ? val.toFixed(digits) : 'N/C';
 
-  // Le vega retourné par le backend est en unités de 1% de vol (convention Bloomberg),
-  // on divise par 100 pour afficher en unités de vol (0.XXXX)
+  // Le vega retourné par le backend est déjà normalisé par point de vol (1% de vol)
   const formatVega = (val: number | undefined) =>
-    val !== undefined ? (val / 100).toFixed(4) : 'N/C';
+    val !== undefined ? val.toFixed(4) : 'N/C';
 
   const greekColor = (val: number | undefined) => {
     if (val === undefined) return 'text-[#888888]';

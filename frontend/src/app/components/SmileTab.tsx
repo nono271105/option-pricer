@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
+import { calculateSmile } from '../../lib/api';
 
 interface SmilePoint { strike: number; iv: number; type: string; }
 interface SmileState {
@@ -31,11 +32,7 @@ export function SmileTab() {
     setState(s => ({ ...s, loading: true, error: null }));
 
     try {
-      if (!window.eel) {
-        setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
-        return;
-      }
-      const res = await window.eel.calculate_smile(ticker, expiry)();
+      const res = await calculateSmile(ticker, expiry, market.S, market.r, market.q);
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
         return;

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
+import { getStrategyNames, calculateStrategy } from '../../lib/api';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -62,7 +63,7 @@ function fmtNum(v: number | null, decimals = 4): string {
 
 function fmtVega(v?: number): string {
   if (v === undefined || v === null) return 'N/C';
-  return (v / 100).toFixed(4);
+  return v.toFixed(4);
 }
 
 // ── Composant principal ───────────────────────────────────────────────────
@@ -83,13 +84,11 @@ export function StrategiesTab() {
   });
 
   useEffect(() => {
-    if (window.eel) {
-      window.eel.get_strategy_names()().then((names: string[]) => {
-        if (names.length > 0 && !names.includes(strategy)) {
-          setStrategy(names[0]);
-        }
-      }).catch(() => { /* silencieux */ });
-    }
+    getStrategyNames().then((names: string[]) => {
+      if (names && names.length > 0 && !names.includes(strategy)) {
+        setStrategy(names[0]);
+      }
+    }).catch(() => { /* silencieux */ });
   }, []);
 
   const handleAnalyze = async () => {
@@ -101,14 +100,16 @@ export function StrategiesTab() {
       const T_days = matStr ? computeDaysFromDate(matStr) : 90;
       const expiry = matStr || getDefaultMaturity();
 
-      if (!window.eel) {
-        setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
-        return;
-      }
-
-      const res = await window.eel.calculate_strategy(
-        strategy, ticker, S, T_days, market.r, market.q, expiry
-      )();
+      const res = await calculateStrategy(
+        strategy,
+        ticker,
+        S,
+        T_days,
+        market.r,
+        market.q,
+        expiry,
+        market.histVol
+      );
 
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));

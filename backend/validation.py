@@ -1,7 +1,7 @@
 """
 validation.py : Validation centralisée des paramètres financiers.
 
-Module pur Python, sans dépendance à Eel.
+Module pur Python, sans dépendance externe.
 Réutilisable tel quel par Pydantic (FastAPI) ou tout autre framework.
 
 Chaque fonction retourne None si les paramètres sont valides,
@@ -339,12 +339,12 @@ def validate_price_result(price: float, label: str = "price") -> float:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper de formatage d'erreur pour les réponses API Eel
+# Helper de formatage d'erreur pour les réponses API
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _validation_error_response(exc: ValueError) -> dict:
     """
-    Transforme une ValueError de validation en réponse Eel standardisée.
+    Transforme une ValueError de validation en réponse API standardisée.
 
     Format : {"error": message_lisible, "code": CODE_STABLE}
     Le code est le premier élément de exc.args si c'est un tuple, sinon dérivé du message.

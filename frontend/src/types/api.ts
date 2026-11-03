@@ -1,13 +1,5 @@
 /**
- * eel.d.ts : Déclarations TypeScript pour window.eel
- *
- * Eel injecte un objet `eel` dans window qui expose les fonctions Python
- * décorées avec @eel.expose. Chaque appel retourne une Promise via la syntaxe :
- *   const result = await window.eel.nom_fonction(args)();
- *
- * La double-invocation `()()` est la signature Eel :
- *   - Premier `()` : construit l'appel côté JS
- *   - Second `()` : retourne une Promise qui résoudra avec la valeur Python
+ * types/api.ts : Types TypeScript pour les échanges avec l'API FastAPI
  */
 
 // ── Types de données retournées ────────────────────────────────────────────
@@ -19,6 +11,7 @@ export interface MarketData {
   r: number | null;
   q: number | null;
   hist_vol: number | null;
+  warnings?: string[] | null;
   error: string | null;
 }
 
@@ -100,6 +93,7 @@ export interface SurfaceResult {
   strikes: number[];
   maturities: number[];
   iv_surface: (number | null)[][];
+  warning?: string | null;
   error: string | null;
 }
 
@@ -182,70 +176,3 @@ export interface StrategyResult {
   sigma_source: string;
   error: string | null;
 }
-
-// ── Interface principale de window.eel ─────────────────────────────────────
-
-interface EelAPI {
-  // Données de marché
-  fetch_market_data(ticker: string): () => Promise<MarketData>;
-  get_option_chain(ticker: string, expiry_str: string): () => Promise<OptionChainResult>;
-  get_available_expiries(ticker: string): () => Promise<ExpiriesResult>;
-
-  // Modèles de pricing
-  calculate_bsm(
-    ticker: string, S: number, K: number, maturity_date: string,
-    r: number, q: number,
-    option_type: string, position: string
-  ): () => Promise<BsmResult>;
-
-  calculate_crr(
-    ticker: string, S: number, K: number, maturity_date: string,
-    r: number, q: number,
-    N: number, option_type: string, position: string
-  ): () => Promise<CrrResult>;
-
-  // Simulation
-  run_simulation(
-    K: number, T_days: number, r: number, q: number,
-    vol_min: number, vol_max: number, vol_step: number,
-    underlying_min: number, underlying_max: number, underlying_step: number,
-    option_type: string
-  ): () => Promise<SimulationResult>;
-
-  // Volatilité
-  calculate_smile(ticker: string, expiry_str: string): () => Promise<SmileResult>;
-  calculate_surface(ticker: string): () => Promise<SurfaceResult>;
-
-  // Exotiques
-  price_exotic(
-    exotic_type: string,
-    ticker: string,
-    S: number, K: number, maturity_date: string, r: number, q: number,
-    option_type: string,
-    barrier?: number | null,
-    barrier_type?: string,
-    averaging?: string,
-    payoff_amount?: number,
-    n_sims?: number,
-    n_steps?: number,
-    seed?: number,
-    rebate?: number
-  ): () => Promise<ExoticResult>;
-
-  // Stratégies
-  get_strategy_names(): () => Promise<string[]>;
-  calculate_strategy(
-    strategy_name: string, ticker: string, S: number, T_days: number,
-    r: number, q: number, expiry_str: string
-  ): () => Promise<StrategyResult>;
-}
-
-// ── Extension de l'interface Window ────────────────────────────────────────
-
-declare global {
-  interface Window {
-    eel: EelAPI;
-  }
-}
-
-export {};

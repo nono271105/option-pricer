@@ -1,15 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useMarket } from '../App';
-
-interface OptionRow {
-  strike: number;
-  bid: number;
-  ask: number;
-  iv: number;
-  volume: number;
-  oi: number;
-  delta: number | null;
-}
+import { getAvailableExpiries, getOptionChain } from '../../lib/api';
+import type { OptionRow } from '../../types/api';
 
 interface ChainState {
   expiry_used: string | null;
@@ -41,9 +33,8 @@ export function OptionChainTab() {
 
   // Charge les expiries disponibles
   const fetchExpiries = async (ticker: string) => {
-    if (!window.eel) return;
     try {
-      const res = await window.eel.get_available_expiries(ticker)();
+      const res = await getAvailableExpiries(ticker);
       if (!res.error && res.expiries.length > 0) {
         setState(s => ({ ...s, expiries: res.expiries }));
         setSelectedExpiry(res.expiries[0]);
@@ -56,16 +47,11 @@ export function OptionChainTab() {
     const expiry = selectedExpiry || getDefaultExpiry();
     setState(s => ({ ...s, loading: true, error: null }));
 
-    if (!window.eel) {
-      setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
-      return;
-    }
-
     try {
       // Récupérer marché si pas déjà fait
       if (!market.S) await market.fetchMarket(ticker);
 
-      const res = await window.eel.get_option_chain(ticker, expiry)();
+      const res = await getOptionChain(ticker, expiry, market.S, market.r, market.q);
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
         return;
@@ -91,7 +77,7 @@ export function OptionChainTab() {
 
   // Charge les expiries au montage
   useEffect(() => {
-    if (window.eel && market.ticker) {
+    if (market.ticker) {
       fetchExpiries(market.ticker);
     }
   }, [market.ticker]);

@@ -1,5 +1,5 @@
 """
-backend/services.py : Logique métier de l'API (anciennement api.py, sans Eel ni état global).
+backend/services.py : Logique métier de l'API (sans état global).
 """
 
 from __future__ import annotations

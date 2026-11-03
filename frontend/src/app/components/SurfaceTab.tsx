@@ -1,12 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { useMarket } from '../App';
 import Plot from './Plot';
+import { calculateSurface } from '../../lib/api';
 
 interface SurfaceState {
   strikes: number[];
   maturities: number[];
   iv_surface: (number | null)[][];
   loading: boolean;
+  warning: string | null;
   error: string | null;
 }
 
@@ -16,27 +18,24 @@ export function SurfaceTab() {
 
   const [state, setState] = useState<SurfaceState>({
     strikes: [], maturities: [], iv_surface: [],
-    loading: false, error: null,
+    loading: false, warning: null, error: null,
   });
 
   const [axisMode, setAxisMode] = useState<'strike' | 'moneyness'>('strike');
 
   const handleCalculate = async () => {
     const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
-    setState(s => ({ ...s, loading: true, error: null }));
+    setState(s => ({ ...s, loading: true, warning: null, error: null }));
 
     try {
-      if (!window.eel) {
-        setState(s => ({ ...s, loading: false, error: 'Eel non disponible' }));
-        return;
-      }
-      const res = await window.eel.calculate_surface(ticker)();
+      const res = await calculateSurface(ticker, market.S, market.r, market.q);
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
         return;
       }
       setState(s => ({
         ...s, loading: false, error: null,
+        warning: res.warning ?? null,
         strikes: res.strikes,
         maturities: res.maturities,
         iv_surface: res.iv_surface,
@@ -56,6 +55,12 @@ export function SurfaceTab() {
 
   return (
     <div className="flex flex-col h-full gap-1 p-1 overflow-auto bg-[#000000]">
+
+      {state.warning && (
+        <div className="bg-[#2D2200] border border-[#FFCC00] text-[#FFCC00] px-3 py-1.5 text-[11px] rounded shrink-0">
+          ⚠ {state.warning}
+        </div>
+      )}
 
       {state.error && (
         <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] rounded shrink-0">

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, createContext, useContext } from 'react';
+import { fetchMarketData } from '../lib/api';
 import { OptionChainTab } from './components/OptionChainTab';
 import { BsmTab } from './components/BsmTab';
 import { CrrTab } from './components/CrrTab';
@@ -18,6 +19,7 @@ export interface MarketState {
   q: number;
   histVol: number;
   isLoading: boolean;
+  warnings: string[] | null;
   error: string | null;
 }
 
@@ -34,6 +36,7 @@ const DEFAULT_MARKET: MarketState = {
   q: 0.0,
   histVol: 0.20,
   isLoading: false,
+  warnings: null,
   error: null,
 };
 
@@ -44,30 +47,6 @@ export const MarketContext = createContext<MarketContextValue>({
 });
 
 export const useMarket = () => useContext(MarketContext);
-
-// ── Logger conditionnel : actif uniquement en mode développement ──────────
-
-const devLog = {
-  warn: (...args: unknown[]) => {
-    if (import.meta.env.DEV) {
-      console.warn(...args);
-    }
-  },
-};
-
-// ── Eel helper : appel avec fallback si eel n'est pas disponible ──────────
-
-async function callEel<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
-  try {
-    if (typeof window !== 'undefined' && window.eel) {
-      return await fn();
-    }
-  } catch (e) {
-    devLog.warn('[Eel] appel échoué:', e);
-  }
-  return fallback;
-}
-
 
 // ── Onglets ───────────────────────────────────────────────────────────────
 
@@ -86,21 +65,24 @@ const TABS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('chains');
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(['chains']));
   const [market, setMarket] = useState<MarketState>(DEFAULT_MARKET);
   const [tickerInput, setTickerInput] = useState('AAPL');
+
+  const handleSelectTab = (tabId: string) => {
+    setActiveTab(tabId);
+    setVisitedTabs(prev => new Set(prev).add(tabId));
+  };
 
   const fetchMarket = useCallback(async (ticker: string) => {
     if (!ticker.trim()) return;
     const tk = ticker.trim().toUpperCase();
     setMarket(m => ({ ...m, isLoading: true, error: null }));
 
-    const result = await callEel(
-      () => window.eel.fetch_market_data(tk)(),
-      { ticker: tk, company_name: tk, S: null, r: 0.05, q: 0.0, hist_vol: 0.20, error: 'Eel non disponible' }
-    );
+    const result = await fetchMarketData(tk);
 
     if (result.error) {
-      setMarket(m => ({ ...m, isLoading: false, error: result.error }));
+      setMarket(m => ({ ...m, isLoading: false, error: result.error, warnings: null }));
     } else {
       setMarket({
         ticker: result.ticker,
@@ -110,6 +92,7 @@ export default function App() {
         q: result.q ?? 0.0,
         histVol: result.hist_vol ?? 0.20,
         isLoading: false,
+        warnings: result.warnings ?? null,
         error: null,
       });
       setTickerInput(result.ticker);
@@ -142,6 +125,11 @@ export default function App() {
               )}
               {market.error && (
                 <span className="text-[#FF4444] text-[9px]">{market.error}</span>
+              )}
+              {market.warnings && market.warnings.length > 0 && (
+                <span className="text-[#FFCC00] text-[9px]" title={market.warnings.join(' | ')}>
+                  ⚠ {market.warnings.join(' | ')}
+                </span>
               )}
               <span className="bg-[#FF3333] text-white px-1 font-bold">ARMED</span>
             </div>
@@ -229,7 +217,7 @@ export default function App() {
                 <button
                   key={tab.id}
                   id={`tab-${tab.id}`}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => handleSelectTab(tab.id)}
                   className={`px-3 py-1 text-[11px] font-bold rounded-t-md border-t border-l border-r border-[#444444] transition-colors -mb-[1px]
                     ${isActive
                       ? 'bg-[#000000] text-[#FFFFFF] border-b-transparent z-10'
@@ -242,16 +230,32 @@ export default function App() {
             })}
           </div>
 
-          {/* Tab Content */}
+          {/* Tab Content : monté à la 1re visite puis conservé */}
           <div className="flex-1 overflow-hidden">
-            <div className={activeTab === 'chains' ? 'block h-full' : 'hidden'}><OptionChainTab /></div>
-            <div className={activeTab === 'bsm' ? 'block h-full' : 'hidden'}><BsmTab /></div>
-            <div className={activeTab === 'crr' ? 'block h-full' : 'hidden'}><CrrTab /></div>
-            <div className={activeTab === 'simulation' ? 'block h-full' : 'hidden'}><SimulationTab /></div>
-            <div className={activeTab === 'smile' ? 'block h-full' : 'hidden'}><SmileTab /></div>
-            <div className={activeTab === 'surface' ? 'block h-full' : 'hidden'}><SurfaceTab /></div>
-            <div className={activeTab === 'exotics' ? 'block h-full' : 'hidden'}><ExoticsTab /></div>
-            <div className={activeTab === 'strategies' ? 'block h-full' : 'hidden'}><StrategiesTab /></div>
+            {visitedTabs.has('chains') && (
+              <div className={activeTab === 'chains' ? 'block h-full' : 'hidden'}><OptionChainTab /></div>
+            )}
+            {visitedTabs.has('bsm') && (
+              <div className={activeTab === 'bsm' ? 'block h-full' : 'hidden'}><BsmTab /></div>
+            )}
+            {visitedTabs.has('crr') && (
+              <div className={activeTab === 'crr' ? 'block h-full' : 'hidden'}><CrrTab /></div>
+            )}
+            {visitedTabs.has('simulation') && (
+              <div className={activeTab === 'simulation' ? 'block h-full' : 'hidden'}><SimulationTab /></div>
+            )}
+            {visitedTabs.has('smile') && (
+              <div className={activeTab === 'smile' ? 'block h-full' : 'hidden'}><SmileTab /></div>
+            )}
+            {visitedTabs.has('surface') && (
+              <div className={activeTab === 'surface' ? 'block h-full' : 'hidden'}><SurfaceTab /></div>
+            )}
+            {visitedTabs.has('exotics') && (
+              <div className={activeTab === 'exotics' ? 'block h-full' : 'hidden'}><ExoticsTab /></div>
+            )}
+            {visitedTabs.has('strategies') && (
+              <div className={activeTab === 'strategies' ? 'block h-full' : 'hidden'}><StrategiesTab /></div>
+            )}
           </div>
         </div>
 
