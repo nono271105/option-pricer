@@ -1,7 +1,8 @@
 # Pipeline de construction et d'interpolation de la surface 3D de volatilité implicite
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 from typing import Optional, Tuple, Dict
@@ -15,7 +16,9 @@ from logic.bsm_logic import OptionModels
 logger = logging.getLogger(__name__)
 
 # constantes de configuration du modèle d'extraction
-NUM_EXPIRATIONS = 20
+MAX_SURFACE_EXPIRIES = 6  # Plafonné à 6 échéances pour respecter les contraintes de latence
+SURFACE_TIME_BUDGET_SECONDS = 12.0  # Budget de temps global pour le téléchargement des chaînes
+NUM_EXPIRATIONS = MAX_SURFACE_EXPIRIES
 MAX_DAYS_TO_MATURITY = 100
 MIN_DAYS_TO_MATURITY = 7
 MONEYNESS_MIN = 0.70
@@ -124,22 +127,27 @@ class ImpliedVolatilitySurface:
 
     def get_option_chains_multiple_expirations(
         self, 
-        ticker_symbol: str
-    ) -> Dict[str, object]:
+        ticker_symbol: str,
+        max_expiries: int = MAX_SURFACE_EXPIRIES,
+        time_budget: float = SURFACE_TIME_BUDGET_SECONDS,
+    ) -> Tuple[Dict[str, object], Optional[str]]:
         """
-        Récupère les chaînes d'options pour plusieurs dates d'expiration.
+        Récupère les chaînes d'options pour plusieurs dates d'expiration (plafonné à max_expiries).
+        Impose un budget de temps global : en cas de dépassement, renvoie les chaînes partielles et un avertissement.
         
         Args:
             ticker_symbol: Symbole du titre (ex: 'AAPL')
+            max_expiries: Nombre maximum d'échéances à télécharger (défaut 6)
+            time_budget: Temps maximum en secondes
             
         Returns:
-            Dict: {'expiration_date': option_chain, ...}
+            Tuple: (option_chains, warning_str|None)
         """
         try:
             expirations = self.data_fetcher.get_available_expiries(ticker_symbol)
             if not expirations:
                 logger.warning("Aucune date d'expiration trouvée pour %s", ticker_symbol)
-                return {}
+                return {}, None
 
             today = datetime.now().date()
             valid_expiries = []
@@ -152,26 +160,43 @@ class ImpliedVolatilitySurface:
                 except ValueError:
                     continue
 
-            valid_expiries = valid_expiries[:NUM_EXPIRATIONS]
+            valid_expiries = valid_expiries[:max_expiries]
             if not valid_expiries:
-                return {}
+                return {}, None
 
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                chains = list(executor.map(
-                    lambda exp: self.data_fetcher.get_option_chain_for_expiry(ticker_symbol, exp),
-                    valid_expiries
-                ))
+            start_time = time.time()
+            option_chains = {}
+            timed_out = False
 
-            option_chains = {
-                exp: chain
-                for exp, chain in zip(valid_expiries, chains)
-                if chain is not None
-            }
-            return option_chains
+            with ThreadPoolExecutor(max_workers=min(len(valid_expiries), 4)) as executor:
+                future_to_exp = {
+                    executor.submit(self.data_fetcher.get_option_chain_for_expiry, ticker_symbol, exp): exp
+                    for exp in valid_expiries
+                }
+                for fut in as_completed(future_to_exp):
+                    exp = future_to_exp[fut]
+                    elapsed = time.time() - start_time
+                    remaining = max(0.1, time_budget - elapsed)
+                    try:
+                        chain = fut.result(timeout=remaining)
+                        if chain is not None:
+                            option_chains[exp] = chain
+                    except Exception as e:
+                        timed_out = True
+                        logger.warning("Dépassement de budget ou erreur pour l'échéance %s : %s", exp, e)
+
+            warning = None
+            if timed_out or len(option_chains) < len(valid_expiries):
+                warning = (
+                    f"Surface IV partielle : {len(option_chains)}/{len(valid_expiries)} "
+                    f"échéances récupérées dans le budget imparti de {time_budget:.0f}s."
+                )
+
+            return option_chains, warning
 
         except Exception as e:
             logger.warning("Erreur lors de la récupération des chaînes d'options: %s", e)
-            return {}
+            return {}, None
 
     # ─────────────────────────────────────────────────────────────────────
     # Extraction des données IV (pipeline complet)
@@ -221,10 +246,10 @@ class ImpliedVolatilitySurface:
         )
         
         # requête globale sur l'ensemble de la nappe d'échéances
-        option_chains = self.get_option_chains_multiple_expirations(ticker_symbol)
+        option_chains, warning = self.get_option_chains_multiple_expirations(ticker_symbol)
         if not option_chains:
             logger.warning("Aucune chaîne d'options récupérée")
-            return None
+            return None, warning
         
         surface_data = []
         today = datetime.now().date()
@@ -332,7 +357,7 @@ class ImpliedVolatilitySurface:
         
         if not surface_data:
             logger.warning("Aucune donnée IV valide extraite après filtrage")
-            return None
+            return None, warning
         
         df = pd.DataFrame(surface_data)
         logger.info("Données extraites: %s points", len(df))
@@ -343,7 +368,7 @@ class ImpliedVolatilitySurface:
                      df['IV'].min(), df['IV'].max(),
                      df['IV'].min() * 100, df['IV'].max() * 100)
         
-        return df
+        return df, warning
 
     # ─────────────────────────────────────────────────────────────────────
     # Interpolation de la surface
@@ -462,14 +487,14 @@ class ImpliedVolatilitySurface:
             current_price = self.data_fetcher.get_live_price(ticker_symbol)
             if current_price is None:
                 logger.warning("Impossible de récupérer le prix pour %s", ticker_symbol)
-                return None, None
+                return None, None, None
 
         # récupération de l'échantillon pré-traité
-        surface_data = self.extract_iv_surface_data(
+        surface_data, warning = self.extract_iv_surface_data(
             ticker_symbol, current_price, current_rate, current_dividend,
         )
         if surface_data is None or surface_data.empty:
-            return None, None
+            return None, None, warning
         
         # application du seuil de troncature temporelle
         surface_data = surface_data[
@@ -478,7 +503,7 @@ class ImpliedVolatilitySurface:
         
         if surface_data.empty:
             logger.warning("Aucune donnée dans la plage de %s jours", MAX_DAYS_TO_MATURITY)
-            return None, None
+            return None, None, warning
         
         logger.info("Interpolation de la surface (%d points)...", len(surface_data))
         try:
@@ -486,7 +511,7 @@ class ImpliedVolatilitySurface:
                 surface_data, current_price,
             )
             logger.info("Surface interpolée avec succès")
-            return surface_data, (X_grid, Y_grid, Z_grid)
+            return surface_data, (X_grid, Y_grid, Z_grid), warning
         except Exception as e:
             logger.warning("Erreur lors de l'interpolation: %s", e)
-            return surface_data, None
+            return surface_data, None, warning

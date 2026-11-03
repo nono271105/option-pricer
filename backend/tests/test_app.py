@@ -751,3 +751,29 @@ class TestDateValidationPhase2c:
         assert res.json()["code"] == "VALIDATION_DATE_INVALID"
 
 
+class TestSurfaceCapPhase2e:
+    """Tests Phase 2e : plafonnement des échéances de surface IV et budget temps."""
+
+    def test_constants_defined(self):
+        from logic.volatility_surface_logic import (
+            MAX_SURFACE_EXPIRIES,
+            SURFACE_TIME_BUDGET_SECONDS,
+        )
+        assert MAX_SURFACE_EXPIRIES == 6
+        assert SURFACE_TIME_BUDGET_SECONDS > 0
+
+    @patch("logic.volatility_surface_logic.DataFetcher")
+    def test_surface_expiries_capped_at_6(self, mock_df_cls):
+        from logic.volatility_surface_logic import ImpliedVolatilitySurface
+        surface = ImpliedVolatilitySurface()
+        # Mock 10 future expirations
+        surface.data_fetcher.get_available_expiries.return_value = [
+            f"2027-{m:02d}-15" for m in range(1, 11)
+        ]
+        surface.data_fetcher.get_option_chain_for_expiry.return_value = MagicMock()
+
+        chains, warning = surface.get_option_chains_multiple_expirations("AAPL")
+        assert len(chains) <= 6
+
+
+

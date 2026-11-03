@@ -530,7 +530,7 @@ def calculate_surface(
         r_val = r if r is not None else 0.05
         q_val = q if q is not None else 0.0
 
-        raw_df, grids = _surface_logic.get_surface_for_ticker(
+        raw_df, grids, warning = _surface_logic.get_surface_for_ticker(
             ticker, float(S_val), r_val, q_val
         )
         if grids is None or raw_df is None:
@@ -545,6 +545,7 @@ def calculate_surface(
                 [round(float(v) * 100, 2) if not np.isnan(v) else None for v in row]
                 for row in Z_grid.tolist()
             ],
+            "warning": warning,
             "error": None,
         }
     except DataSourceError:
