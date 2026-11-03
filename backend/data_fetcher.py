@@ -117,12 +117,28 @@ class DataFetcher:
             logger.warning("Erreur inattendue SOFR : %s", type(e).__name__)
             return None
 
-    def get_dividend_yield(self, ticker_symbol: str) -> float:
+    def get_ticker_info(self, ticker_symbol: str) -> dict:
+        """Récupère et met en cache l'objet info d'un ticker Yahoo (un seul appel partagé)."""
+        cache_key = f"info_{ticker_symbol.upper()}"
+        cached_info = global_cache_static.get(cache_key)
+        if cached_info is not None:
+            return cached_info
+        try:
+            ticker = yf.Ticker(ticker_symbol)
+            info = ticker.info or {}
+            global_cache_static.set(cache_key, info)
+            return info
+        except Exception as e:
+            logger.warning("Erreur info pour %s : %s", ticker_symbol, e)
+            return {}
+
+    def get_dividend_yield(self, ticker_symbol: str, info: Optional[dict] = None) -> float:
         """
         Récupère le rendement de dividende annuel.
         
         Args:
             ticker_symbol: Symbole du titre
+            info: Dictionnaire info Yahoo optionnel (si déjà récupéré)
             
         Returns:
             float: Rendement de dividende annuel décimalisé (défaut: 0.0)
@@ -134,7 +150,8 @@ class DataFetcher:
 
         result = 0.0
         try:
-            info = yf.Ticker(ticker_symbol).info
+            if info is None:
+                info = self.get_ticker_info(ticker_symbol)
 
             # 1. trailingAnnualDividendYield est renvoyé en décimal par yfinance (ex: 0.0034)
             tr_yield = info.get("trailingAnnualDividendYield")
@@ -169,32 +186,40 @@ class DataFetcher:
         global_cache_static.set(cache_key, result)
         return result
 
-    def get_company_name(self, ticker_symbol: str) -> Optional[str]:
+    def get_company_name(self, ticker_symbol: str, info: Optional[dict] = None) -> Optional[str]:
         """
         Récupère le nom de la société à partir du symbole du ticker.
         
         Args:
             ticker_symbol: Symbole du titre
+            info: Dictionnaire info Yahoo optionnel (si déjà récupéré)
             
         Returns:
             Optional[str]: Nom de la société ou None en cas d'erreur
         """
-        # même logique de cache
         cache_key = f"company_name_{ticker_symbol}"
         cached_name = global_cache_static.get(cache_key)
         if cached_name is not None:
             return cached_name
         
         try:
-            ticker = yf.Ticker(ticker_symbol)
-            info = ticker.info
+            if info is None:
+                info = self.get_ticker_info(ticker_symbol)
             company_name = info.get("longName") or info.get("shortName") or ticker_symbol
-            # on met en cache avant de retourner
             global_cache_static.set(cache_key, company_name)
             return company_name
         except Exception as e:
             logger.warning("Erreur nom société pour %s : %s", ticker_symbol, e)
             return None
+
+    def get_company_and_dividend(self, ticker_symbol: str) -> Tuple[Optional[str], float]:
+        """
+        Récupère le nom de l'entreprise et le rendement de dividende en un seul appel à Ticker.info.
+        """
+        info = self.get_ticker_info(ticker_symbol)
+        company = self.get_company_name(ticker_symbol, info=info)
+        div = self.get_dividend_yield(ticker_symbol, info=info)
+        return company, div
 
     def get_available_expiries(self, ticker_symbol: str) -> list:
         key = f"expiries_{ticker_symbol.upper()}"

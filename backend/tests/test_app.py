@@ -214,6 +214,21 @@ class TestDataFetcher:
         assert name == "XYZ"
 
     @patch("data_fetcher.yf.Ticker")
+    def test_single_info_call_shared(self, mock_ticker_cls):
+        info_dict = {
+            "longName": "Apple Inc.",
+            "trailingAnnualDividendYield": 0.005,
+        }
+        mock_instance = MagicMock()
+        mock_instance.info = info_dict
+        mock_ticker_cls.return_value = mock_instance
+
+        name, div = self.fetcher.get_company_and_dividend("AAPL")
+        assert name == "Apple Inc."
+        assert div == pytest.approx(0.005)
+        assert mock_ticker_cls.call_count == 1
+
+    @patch("data_fetcher.yf.Ticker")
     def test_option_chain_cached_per_expiry(self, mock_ticker_cls):
         mock_instance = mock_ticker_cls.return_value
         prop_mock = PropertyMock(return_value=["2026-12-18"])

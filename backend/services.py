@@ -139,13 +139,12 @@ def fetch_market_data(ticker: str) -> Dict[str, Any]:
         raise ValueError("VALIDATION_INVALID_VALUE: Ticker vide", "VALIDATION_INVALID_VALUE")
 
     try:
-        with ThreadPoolExecutor(max_workers=5) as ex:
+        with ThreadPoolExecutor(max_workers=4) as ex:
             futures = {
                 "price": ex.submit(_data_fetcher.get_live_price, ticker),
                 "sofr": ex.submit(_data_fetcher.get_sofr_rate),
-                "div": ex.submit(_data_fetcher.get_dividend_yield, ticker),
                 "vol": ex.submit(_data_fetcher.get_historical_volatility, ticker, "1y"),
-                "company": ex.submit(_data_fetcher.get_company_name, ticker),
+                "company_div": ex.submit(_data_fetcher.get_company_and_dividend, ticker),
             }
             results: Dict[str, Any] = {}
             for key, fut in futures.items():
@@ -154,6 +153,9 @@ def fetch_market_data(ticker: str) -> Dict[str, Any]:
                 except Exception:
                     results[key] = None
 
+        company_res, div_res = (
+            results["company_div"] if results["company_div"] is not None else (None, None)
+        )
         S = _safe(results["price"])
         if S is None:
             raise DataSourceError(
@@ -168,8 +170,8 @@ def fetch_market_data(ticker: str) -> Dict[str, Any]:
             r = 0.05
             warnings.append("SOFR indisponible, valeur par défaut 5 %")
 
-        if results["div"] is not None:
-            q = _safe(results["div"])
+        if div_res is not None:
+            q = _safe(div_res)
         else:
             q = 0.0
             warnings.append("Dividende indisponible, valeur par défaut 0 %")
@@ -180,7 +182,7 @@ def fetch_market_data(ticker: str) -> Dict[str, Any]:
             hist_vol = 0.20
             warnings.append("Volatilité historique indisponible, valeur par défaut 20 %")
 
-        company = results["company"] or ticker
+        company = company_res or ticker
 
         return {
             "ticker": ticker,
