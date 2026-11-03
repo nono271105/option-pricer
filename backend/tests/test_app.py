@@ -3,9 +3,9 @@
 """
 test_app.py : Tests unitaires pour tous les modules non-pricing.
 
-Notes de migration (PySide6 → React/Eel) :
+Notes de migration :
     - TestUtils supprimé : get_default_maturity_date (utils.py) et PySide6 ne font
-      plus partie du projet depuis la migration vers Eel.
+      plus partie du projet.
 """
 
 import sys
