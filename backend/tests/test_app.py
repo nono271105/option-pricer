@@ -697,3 +697,42 @@ class TestMarketDataDefaultsAndWarnings:
         assert any("Dividende" in w for w in data["warnings"])
         assert any("Volatilité" in w for w in data["warnings"])
 
+
+class TestDateValidationPhase2c:
+    """Tests Phase 2c : validation stricte des dates sans repli silencieux."""
+
+    def test_bsm_past_date_raises_422(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        client = TestClient(app)
+        res = client.post("/api/bsm", json={
+            "ticker": "AAPL",
+            "S": 100.0,
+            "K": 100.0,
+            "maturity_date": "2020-01-01",
+            "r": 0.05,
+            "q": 0.0,
+            "option_type": "call",
+            "position": "long",
+        })
+        assert res.status_code == 422
+        assert res.json()["code"] == "VALIDATION_DATE_EXPIRED"
+
+    def test_bsm_invalid_date_format_raises_422(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        client = TestClient(app)
+        res = client.post("/api/bsm", json={
+            "ticker": "AAPL",
+            "S": 100.0,
+            "K": 100.0,
+            "maturity_date": "invalid-date",
+            "r": 0.05,
+            "q": 0.0,
+            "option_type": "call",
+            "position": "long",
+        })
+        assert res.status_code == 422
+        assert res.json()["code"] == "VALIDATION_DATE_INVALID"
+
+

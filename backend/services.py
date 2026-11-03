@@ -39,6 +39,7 @@ from validation import (
     validate_r,
     validate_q,
     validate_rebate,
+    validate_date_str,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,27 +127,6 @@ def _payoff_curve(
         {"spot": round(float(s), 2), "payoff": round(float(p), 4)}
         for s, p in zip(s_arr, net)
     ]
-
-
-def _next_weekday_after(days_ahead: int) -> str:
-    """Retourne la date d'aujourd'hui + days_ahead jours, ajustée au prochain jour ouvré."""
-    d = date.today() + timedelta(days=days_ahead)
-    if d.weekday() == 5:
-        d += timedelta(days=2)
-    elif d.weekday() == 6:
-        d += timedelta(days=1)
-    return d.strftime("%Y-%m-%d")
-
-
-def _parse_date(date_str: str, default_days: int = 90) -> datetime:
-    """Parse la date (YYYY-MM-DD ou DD/MM/YYYY). En cas d'échec, retourne j+default_days."""
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
-        try:
-            return datetime.strptime(date_str, "%d/%m/%Y")
-        except ValueError:
-            return datetime.strptime(_next_weekday_after(default_days), "%Y-%m-%d")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -237,7 +217,7 @@ def get_option_chain(
     q: Optional[float] = None,
 ) -> Dict[str, Any]:
     ticker = ticker.strip().upper()
-    maturity_dt = _parse_date(expiry_str, 60)
+    maturity_dt = validate_date_str(expiry_str, field_name="expiry_str")
 
     try:
         opt_chain, closest_date = _data_fetcher.get_option_data_chain(ticker, maturity_dt)
@@ -310,8 +290,8 @@ def calculate_bsm(
     hist_vol: Optional[float] = None,
 ) -> Dict[str, Any]:
     S_f, K_f, r_f, q_f = float(S), float(K), float(r), float(q)
-    mat_dt = _parse_date(maturity_date, 90)
-    T_days = max((mat_dt.date() - date.today()).days, 1)
+    mat_dt = validate_date_str(maturity_date, field_name="maturity_date")
+    T_days = (mat_dt.date() - date.today()).days
     T = T_days / 365.0
     validate_pricing_params(S_f, K_f, T, r_f, q_f, option_type)
     validate_position(position)
@@ -372,8 +352,8 @@ def calculate_crr(
 ) -> Dict[str, Any]:
     S_f, K_f, r_f, q_f = float(S), float(K), float(r), float(q)
     N_i = int(N)
-    mat_dt = _parse_date(maturity_date, 90)
-    T_days = max((mat_dt.date() - date.today()).days, 1)
+    mat_dt = validate_date_str(maturity_date, field_name="maturity_date")
+    T_days = (mat_dt.date() - date.today()).days
     T = T_days / 365.0
     validate_pricing_params(S_f, K_f, T, r_f, q_f, option_type)
     validate_position(position)
@@ -490,7 +470,7 @@ def calculate_smile(
     q: Optional[float] = None,
 ) -> Dict[str, Any]:
     ticker = ticker.strip().upper()
-    maturity_dt = _parse_date(expiry_str, 60)
+    maturity_dt = validate_date_str(expiry_str, field_name="expiry_str")
 
     try:
         opt_chain, closest_date = _data_fetcher.get_option_data_chain(ticker, maturity_dt)
@@ -601,8 +581,8 @@ def price_exotic(
     S_f, K_f, r_f, q_f = float(S), float(K), float(r), float(q)
     rebate_f = float(rebate)
     validate_rebate(rebate_f)
-    mat_dt = _parse_date(maturity_date, 90)
-    T_days_i = max((mat_dt.date() - date.today()).days, 1)
+    mat_dt = validate_date_str(maturity_date, field_name="maturity_date")
+    T_days_i = (mat_dt.date() - date.today()).days
     T = T_days_i / 365.0
     validate_pricing_params(S_f, K_f, T, r_f, q_f, option_type)
     validate_exotic_type(exotic_type)
@@ -737,7 +717,7 @@ def calculate_strategy(
     validate_r(r_f)
     validate_q(q_f)
 
-    maturity_dt = _parse_date(expiry_str, int(T_days))
+    maturity_dt = validate_date_str(expiry_str, field_name="expiry_str")
 
     iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, S_f, maturity_dt, "call")
     sigma_used = iv if iv is not None else (hist_vol if hist_vol is not None else 0.20)
