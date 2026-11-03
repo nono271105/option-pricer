@@ -47,6 +47,8 @@ N_SIMS_MAX: int = 200_000    # décision prudente : limite mémoire/temps
 N_STEPS_MIN: int = 1
 N_STEPS_MAX: int = 1_000     # décision prudente
 
+MC_MAX_CELLS: int = 10_000_000  # plafond mémoire : n_sims * n_steps <= 10M (< 1 Go de RAM)
+
 # Arbre CRR
 N_CRR_MIN: int = 2
 N_CRR_MAX: int = 5_000       # déjà validé dans crr_logic.py
@@ -219,6 +221,20 @@ def validate_n_steps(n_steps: int) -> None:
             f"VALIDATION_N_STEPS_OUT_OF_RANGE: n_steps={n_steps} doit être dans "
             f"[{N_STEPS_MIN}, {N_STEPS_MAX}].",
             "VALIDATION_N_STEPS_OUT_OF_RANGE",
+        )
+
+
+def validate_mc_budget(n_sims: int, n_steps: int) -> None:
+    """
+    Vérifie que le produit n_sims * n_steps ne dépasse pas le plafond de calcul.
+    Plafond : MC_MAX_CELLS (10 millions de cellules).
+    """
+    total_cells = int(n_sims) * int(n_steps)
+    if total_cells > MC_MAX_CELLS:
+        raise ValueError(
+            f"VALIDATION_MC_BUDGET_EXCEEDED: Le calcul Monte Carlo demande {total_cells:,} cellules "
+            f"(n_sims={n_sims:,} × n_steps={n_steps:,}), ce qui dépasse le plafond autorisé de {MC_MAX_CELLS:,} cellules.",
+            "VALIDATION_MC_BUDGET_EXCEEDED",
         )
 
 

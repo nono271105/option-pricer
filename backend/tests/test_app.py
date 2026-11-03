@@ -776,4 +776,32 @@ class TestSurfaceCapPhase2e:
         assert len(chains) <= 6
 
 
+class TestMonteCarloBudgetPhase2f:
+    """Tests Phase 2f : plafonnement des cellules Monte Carlo."""
+
+    def test_mc_budget_exceeded_raises_422(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        client = TestClient(app)
+        # 150_000 * 100 = 15_000_000 > 10_000_000
+        res = client.post("/api/exotic", json={
+            "exotic_type": "asian",
+            "ticker": "AAPL",
+            "S": 100.0,
+            "K": 100.0,
+            "maturity_date": "2027-06-01",
+            "r": 0.05,
+            "q": 0.0,
+            "option_type": "call",
+            "averaging": "arithmetic",
+            "n_sims": 150_000,
+            "n_steps": 100,
+            "seed": 42,
+        })
+        assert res.status_code == 422
+        assert res.json()["code"] == "VALIDATION_MC_BUDGET_EXCEEDED"
+        assert "15,000,000" in res.json()["error"]
+
+
+
 

@@ -40,6 +40,7 @@ from validation import (
     validate_q,
     validate_rebate,
     validate_date_str,
+    validate_mc_budget,
 )
 
 logger = logging.getLogger(__name__)
@@ -591,6 +592,7 @@ def price_exotic(
     validate_exotic_type(exotic_type)
     validate_n_sims(n_sims)
     validate_n_steps(n_steps)
+    validate_mc_budget(n_sims, n_steps)
     if exotic_type == "barrier":
         if barrier is None:
             raise ValueError("VALIDATION_INVALID_VALUE: barrier requis pour barrier option", "VALIDATION_INVALID_VALUE")
