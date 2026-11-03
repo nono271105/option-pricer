@@ -203,9 +203,10 @@ class TestGreeks:
 
     def test_vega_atm(self):
         # NOTE: DerivaGem rapporte le vega par 1% de vol (×0.01).
-        # Le code retourne dC/dσ brut. Conversion : code_vega × 0.01 = DerivaGem.
+        # Le backend normalise désormais le vega par point de vol (1%).
+        # Conversion directe : code_vega = DerivaGem.
         expected_dg = GOLDEN["vega_atm"]
-        expected_code = expected_dg * 100.0  # valeur attendue du code
+        expected_code = expected_dg  # valeur normalisée du backend
         vega_call = self._greeks("call")["vega"]
         vega_put = self._greeks("put")["vega"]
         # Vega call == Vega put (propriété mathématique)
@@ -214,7 +215,7 @@ class TestGreeks:
             f"pct={_pct(vega_call, vega_put)}"
         )
         assert vega_call == pytest.approx(expected_code, abs=TOL_GREEK), (
-            f"Vega ATM: expected={expected_code:.4f} (DG×100), "
+            f"Vega ATM: expected={expected_code:.4f} (DG), "
             f"got={vega_call:.4f}, diff={abs(vega_call - expected_code):.4f}, "
             f"pct={_pct(vega_call, expected_code)}"
         )

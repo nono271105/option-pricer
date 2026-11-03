@@ -183,11 +183,11 @@ class CRRModels:
             return self.cox_ross_rubinstein_price(
                 S=S, K=K, T=T, r=r_local, sigma=sigma_local, q=q, N=N, option_type=option_type)
 
-        # choc infinitésimal sur la volatilité
+        # choc infinitésimal sur la volatilité, normalisé pour 1% de vol (convention Bloomberg)
         eps_sigma = 0.01
         sigma_plus  = sigma + eps_sigma
         sigma_minus = max(sigma - eps_sigma, 1e-4)
-        vega = (crr_price(sigma_plus, r) - crr_price(sigma_minus, r)) / (sigma_plus - sigma_minus)
+        vega = ((crr_price(sigma_plus, r) - crr_price(sigma_minus, r)) / (sigma_plus - sigma_minus)) / 100.0
         
         # choc infinitésimal sur le taux sans risque
         eps_r = 0.0001

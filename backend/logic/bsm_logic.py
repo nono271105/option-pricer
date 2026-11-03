@@ -119,8 +119,8 @@ class OptionModels:
         # convexité du prix par rapport au sous-jacent
         gamma = np.exp(-q * T) * n_d1 / (S * sigma * np.sqrt(T))
 
-        # sensibilité du prix à une variation de la volatilité
-        vega = S * np.exp(-q * T) * n_d1 * np.sqrt(T)
+        # sensibilité du prix à une variation de la volatilité, normalisée pour 1% de vol (convention Bloomberg)
+        vega = (S * np.exp(-q * T) * n_d1 * np.sqrt(T)) / 100.0
 
         # dépréciation temporelle de l'option
         theta_part1 = -(S * np.exp(-q * T) * n_d1 * sigma) / (2 * np.sqrt(T))
