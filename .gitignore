@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+.vercel/
+.vercel
 venv/
 .venv/
 env/
