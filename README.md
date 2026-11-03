@@ -4,23 +4,25 @@
 </h1>
 
 <p align="center">
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT"></a>
   <img src="https://img.shields.io/badge/status-Active-brightgreen.svg" alt="Active">
   <br>
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white" alt="React 18">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white" alt="Vite">
-  <img src="https://img.shields.io/badge/Eel-0.16-4B8BBE?logo=python&logoColor=white" alt="Eel">
+  <img src="https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Vercel-Deployed-000000?logo=vercel&logoColor=white" alt="Vercel">
   <br>
   <img src="https://img.shields.io/badge/Plotly-%233F4F75.svg?logo=plotly&logoColor=white" alt="Plotly">
   <img src="https://img.shields.io/badge/NumPy-%23013243.svg?logo=numpy&logoColor=white" alt="NumPy">
   <img src="https://img.shields.io/badge/pandas-%23150458.svg?logo=pandas&logoColor=white" alt="pandas">
+  <img src="https://img.shields.io/badge/SciPy-%230C55A5.svg?logo=scipy&logoColor=white" alt="SciPy">
 </p>
 
 <p align="center">
   Application de pricing d'options financières vanilles et exotiques.<br>
-  Interface React avec backend Python, données de marché en temps réel.
+  Frontend React/TypeScript statique avec backend FastAPI sans état, déployable sur Vercel. Données de marché en temps réel (Yahoo Finance & FRED).
 </p>
 
 ---
@@ -29,127 +31,105 @@
 
 ### Modèles de pricing
 
-| Modèle                                            |            Type            |
-| :------------------------------------------------- | :------------------------: |
-| **Black-Scholes-Merton**                     |        Européenne        |
-| **Cox-Ross-Rubinstein**                      |        Américaine        |
-| **Rubinstein & Reiner (1991) + Monte Carlo** |         Barrières         |
-| **Monte Carlo**                              |         Asiatique         |
-| **Monte Carlo**                              |          Lookback          |
-| **BSM fermée + Monte Carlo**                | Digitale / Cash-or-Nothing |
+| Modèle | Type | Méthode |
+| :--- | :---: | :--- |
+| **Black-Scholes-Merton** | Européenne | Formule fermée analytique |
+| **Cox-Ross-Rubinstein** | Américaine | Arbre binomial avec exercice anticipé |
+| **Rubinstein & Reiner (1991) + Monte Carlo** | Barrières | Analytique (4 types) + simulation GBM avec rebate |
+| **Monte Carlo** | Asiatique | Moyenne arithmétique / géométrique |
+| **Monte Carlo** | Lookback | Prix extrême flottant / fixe |
+| **BSM fermée + Monte Carlo** | Digitale | Cash-or-Nothing analytique et numérique |
 
 ### Données de marché en temps réel
 
-- **Prix spot** via Yahoo Finance (`yfinance`)
-- **Taux sans risque SOFR** depuis l'API FRED
-- **Dividendes** et **volatilité implicite** extraits automatiquement depuis les chaînes d'options
-- Cache TTL thread-safe pour limiter les appels API
+- **Prix spot** via Yahoo Finance (`yfinance`) avec appel d'information mutualisé.
+- **Taux sans risque SOFR** depuis l'API FRED de la Réserve fédérale américaine.
+- **Dividendes** et **volatilité implicite** extraits automatiquement depuis les chaînes d'options.
+- **Cache TTL thread-safe** pour optimiser les requêtes externes tout en garantissant un backend strictement sans état.
 
 ### Grecs
 
-Delta (Δ), Gamma (Γ), Theta (Θ/jour), Vega (ν), Rho (ρ), calculés analytiquement (BSM) ou par différences finies (CRR)
+Delta ($\Delta$), Gamma ($\Gamma$), Theta ($\Theta$/jour), Vega ($\nu$, normalisé par point de vol de 1 %), Rho ($\rho$/100), calculés analytiquement (BSM) ou par différences finies (CRR).
+
+---
+
+## Architecture
+
+L'application est architecturée pour un déploiement unifié sur **Vercel** : frontend Vite statique servi via CDN global et API Python Serverless exécutée par **FastAPI**.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Frontend React 18                        │
+│   TypeScript · Vite 6 · Tailwind CSS 4 · Plotly.js (lazy)   │
+│   8 onglets avec conservation d'état au montage             │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               │ fetch() HTTP JSON
+                               ▼
+                    ┌─────────────────────┐
+                    │  Proxy /api/ (Vite) │
+                    │   ou Vercel Rewrite │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Backend FastAPI                          │
+│   api/index.py (Serverless Vercel) / backend/main.py        │
+│   Pydantic v2 (validation & schémas stricts)                │
+│   Architecture 100 % stateless (sans état partagé)          │
+└──────────────┬──────────────┬──────────────┬────────────────┘
+               │              │              │
+               ▼              ▼              ▼
+           backend/        backend/       backend/
+            logic/       data_fetcher     cache.py
+           (pricing)   (yfinance + FRED)  (TTL local)
+```
 
 ---
 
 ## Interface 8 onglets
 
 ### 1 · Option Chain
+Carnet d'options en temps réel : strikes, bid/ask, IV implicite, volume, open interest et delta BSM pour calls et puts. Sélection de l'échéance parmi toutes les dates disponibles.
 
-Carnet d'options en temps réel : strikes, bid/ask, IV implicite, volume, open interest et delta BSM pour calls et puts. Sélection de l'expiry parmi toutes les échéances disponibles.
-
-![1782558153085](image/README/1782558153085.png)
-
----
+![Option Chain](image/README/1782558153085.png)
 
 ### 2 · Calculateur BSM
-
 Pricing européen en temps réel avec récupération automatique de S, r, q et IV marché.
 
-![1782558205557](image/README/1782558205557.png)
-
----
+![BSM](image/README/1782558205557.png)
 
 ### 3 · Modèle CRR
+Pricing américain par arbre binomial. Comparaison directe avec le prix BSM européen et grecs par différences finies.
 
-Pricing américain par arbre binomial. Comparaison directe avec le prix BSM européen.
-
-![1782558227460](image/README/1782558227460.png)
-
----
+![CRR](image/README/1782558227460.png)
 
 ### 4 · Simulation
+Heatmap croisée volatilité $\times$ prix sous-jacent visualisant l'impact combiné de Gamma et Vega sur le prix de l'option. Plafond de calcul sécurisé pour l'exécution serverless.
 
-Heatmap croisée volatilité × prix sous-jacent visualise l'impact combiné de Gamma et Vega sur le prix de l'option.
-
-![1782558245403](image/README/1782558245403.png)
-
----
+![Simulation](image/README/1782558245403.png)
 
 ### 5 · Smile de volatilité
-
 Tracé IV vs Strike par inversion numérique de BSM (méthode de Brent) sur les prix mid Calls/Puts OTM.
 
-![1782558264736](image/README/1782558264736.png)
-
----
+![Smile](image/README/1782558264736.png)
 
 ### 6 · Surface IV 3D
+Surface de volatilité implicite interactive (Strike ou Moneyness $\times$ Maturité $\times$ IV) avec budget temporel et limitation adaptative d'échéances pour des temps de réponse rapides.
 
-Surface de volatilité implicite interactive axes Strike ou Moneyness × Maturité × IV.
-
-![1782558286358](image/README/1782558286358.png)
-
----
+![Surface](image/README/1782558286358.png)
 
 ### 7 · Options exotiques
+Pricing analytique et Monte Carlo pour options barrières, asiatiques, lookbacks et digitales. Trajectoires GBM simulées, distribution des payoffs et profil à maturité.
 
-Pricing analytique + Monte Carlo pour barrières, asiatiques, lookbacks et digitales. Trajectoires GBM simulées, distribution des payoffs et profil à maturité.
-
-![1782558309020](image/README/1782558309020.png)
-
----
+![Exotics](image/README/1782558309020.png)
 
 ### 8 · Stratégies
+Construction et analyse de stratégies multi-legs avec données de marché en temps réel :
+- **22 stratégies en 5 familles** : Positions de base, Spreads directionnels, Volatilité, Butterflies, Condors.
+- **Métriques calculées** : coût net, breakevens, gain/perte maximum et grecs agrégés BSM.
 
-Construction et analyse de stratégies options multi-legs avec données de marché en temps réel.
-
-**22 stratégies disponibles en 5 familles**
-
-- Positions de base : Long/Short Call, Long/Short Put
-- Spreads directionnels : Bull/Bear Call Spread, Bull/Bear Put Spread
-- Volatilité : Long/Short Straddle, Long/Short Strangle
-- Butterflies : Call/Put/Iron Butterfly (long et short)
-- Condors : Call/Put/Iron Condor (long et short)
-
-**Métriques calculées automatiquement** : coût total, breakevens, gain maximum, perte maximum et grecs agrégés BSM (Δ, Γ, Θ, ν, ρ) de tous les legs.
-
-![1782558324670](image/README/1782558324670.png)
-
----
-
-## Architecture
-
-### React ↔ Python via Eel
-
-L'application repose sur **[Eel](https://github.com/python-eel/Eel)** comme pont entre le frontend React et le backend Python.
-
-```
-┌─────────────────────────────────────────────────┐
-│                 Frontend React                  │
-│   TypeScript · Vite · Tailwind · Plotly.js      │
-│   8 onglets · MarketContext partagé             │
-└────────────────────┬────────────────────────────┘
-                     │  window.eel.*()
-┌────────────────────▼────────────────────────────┐
-│                  api.py (Eel)                   │
-│   @eel.expose : pont Python ↔ React             │
-└──┬──────────┬──────────────┬────────────────┬───┘
-   │          │              │                │
-   ▼          ▼              ▼                ▼
-logic/    data_fetcher    cache.py    market_data_store
-(pricing)  (yfinance                      (Pub/Sub)
-           FRED API)
-```
+![Strategies](image/README/1782558324670.png)
 
 ---
 
@@ -159,137 +139,175 @@ logic/    data_fetcher    cache.py    market_data_store
 
 ---
 
-## Installation
+## Installation et Lancement
 
 ### Prérequis
+- **Python 3.12+**
+- **Node.js 18+** et **npm**
+- Clé d'API FRED gratuite (pour le taux sans risque SOFR) : [Obtenir une clé FRED](https://fred.stlouisfed.org/docs/api/api_key.html)
 
-- Python 3.8+
-- Node.js 18+ (pour compiler le frontend)
-- Google Chrome (Eel ouvre l'application dans Chrome)
-- Clé API FRED gratuite → https://fred.stlouisfed.org/docs/api/api_key.html
-
-### Étapes
-
-```Shell
-# 1. Cloner le dépôt
-git clone -b react-migration https://github.com/nono271105/option-pricer.git
-cd option-pricer
-
-# 2. Environnement virtuel Python
-python -m venv venv
-source venv/bin/activate        # macOS / Linux
-venv\Scripts\activate           # Windows
-
-# 3. Dépendances Python
-pip install -r requirements.txt
-
-# 4. Variables d'environnement (créer un fichier .env à la racine)
-FRED_API_KEY=VOTRE-CLÉ                  # API FRED pour le taux SOFR
-
-# 5. Compiler le frontend
-cd frontend
-npm install
-npm run build
-cd ..
-
-# 6. Lancement
-python main.py
+### Configuration des variables d'environnement
+Copiez `.env.example` en `.env` à la racine :
+```bash
+cp .env.example .env
+```
+Renseignez votre clé FRED :
+```env
+FRED_API_KEY=votre_cle_fred_ici
 ```
 
-### Mode développement (hot-reload)
+---
+
+### Lancement en développement local
+
+#### Option 1 : Uvicorn + Vite Dev Server (recommandé)
 
 ```bash
-# Terminal 1 : serveur Vite
-cd frontend && npm run dev
+# 1. Installer l'environnement Python
+python3 -m venv venv
+source venv/bin/activate       # Sur Windows : venv\Scripts\activate
+pip install -r backend/requirements-dev.txt
 
-# Terminal 2 : backend Eel
-OPTION_DEV=1 python main.py
+# 2. Installer les dépendances frontend
+cd frontend
+npm install
+cd ..
+
+# 3. Lancer le backend FastAPI (Terminal 1)
+uvicorn backend.main:app --reload --port 8000
+
+# 4. Lancer le frontend Vite (Terminal 2)
+cd frontend
+npm run dev
 ```
+
+L'application est accessible sur `http://localhost:5173`. Le serveur de dev Vite transfère automatiquement les requêtes `/api/*` vers `http://localhost:8000`.
+
+#### Option 2 : Simulation Vercel locale via Vercel CLI
+
+```bash
+npm i -g vercel
+vercel dev
+```
+
+---
+
+## Déploiement sur Vercel
+
+Le projet est configuré pour un déploiement Vercel en un clic sans configuration supplémentaire :
+
+1. Importez le dépôt Git dans votre tableau de bord **Vercel**.
+2. Configurez la variable d'environnement dans **Settings > Environment Variables** :
+   - `FRED_API_KEY` : votre clé d'API FRED.
+3. Déployez !
+   - Le frontend est compilé avec `cd frontend && npm ci && npm run build`.
+   - L'API FastAPI est instanciée via `api/index.py` comme Serverless Function avec réécriture `/api/(.*)`.
 
 ---
 
 ## Structure du projet
 
 ```
-option_pricer/
-├── main.py                           # Point d'entrée Eel
-├── api.py                            # Pont Eel : toutes les fonctions @eel.expose
-├── market_data_store.py              # Store pub/sub centralisé
-├── data_fetcher.py                   # yfinance + FRED API
-├── cache.py                          # Cache TTL thread-safe
+option-pricer/
+├── api/
+│   └── index.py                      # Point d'entrée Serverless Vercel (exporte `app`)
 │
-├── logic/                            # Modules de logique métier (calculs purs)
-│   ├── bsm_logic.py                  # Modèle Black-Scholes + Grecs
-│   ├── crr_logic.py                  # Modèle Cox-Ross-Rubinstein + Grecs
-│   ├── exotic_options_logic.py       # Barrières, Asiatiques, Lookback, Digitales
-│   ├── simulation_logic.py           # Calcul heatmap
-│   ├── strategy_logic.py             # Moteur de calcul des 22 stratégies
-│   ├── volatility_smile_logic.py     # Calcul IV smile
-│   └── volatility_surface_logic.py   # Surface IV 3D
+├── backend/
+│   ├── main.py                       # Application FastAPI, CORS, gestionnaires d'erreurs
+│   ├── schemas.py                    # Schémas Pydantic stricts pour les requêtes/réponses
+│   ├── services.py                   # Orchestration métier (100 % stateless)
+│   ├── health.py                     # Diagnostic GET /api/health (yfinance & FRED)
+│   ├── data_fetcher.py               # Récupération données de marché (yfinance + FRED)
+│   ├── cache.py                      # Cache TTL thread-safe en mémoire
+│   ├── validation.py                 # Validation mathématique et financière
+│   │
+│   ├── logic/                        # Moteurs de calcul financier
+│   │   ├── bsm_logic.py              # Black-Scholes-Merton & Grecs analytiques
+│   │   ├── crr_logic.py              # Cox-Ross-Rubinstein (arbre binomial)
+│   │   ├── exotic_options_logic.py   # Options barrières, asiatiques, lookback, digitales
+│   │   ├── simulation_logic.py       # Heatmap de simulation et sensibilité
+│   │   ├── strategy_logic.py         # Moteur des 22 stratégies d'options
+│   │   ├── volatility_smile_logic.py # Calcul du smile de volatilité implicite
+│   │   └── volatility_surface_logic.py # Surface 3D de volatilité
+│   │
+│   ├── tests/                        # Suite de tests de régression pytest
+│   │   ├── conftest.py
+│   │   ├── test_app.py               # Tests d'intégration FastAPI TestClient
+│   │   ├── test_data.py              # Tests mocks data_fetcher & FRED
+│   │   └── test_pricing.py           # Validations numériques vs DerivaGem
+│   │
+│   ├── requirements.txt              # Dépendances Python de production
+│   ├── requirements-dev.txt          # Dépendances de dev (uvicorn, httpx, pytest)
+│   └── pytest.ini                    # Configuration pytest
 │
-├── frontend/                         # Interface React/TypeScript
+├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── App.tsx               # Composant racine + MarketContext
+│   │   │   ├── App.tsx               # Racine, layout Quote Panel, lazy loading des onglets
 │   │   │   └── components/
-│   │   │       ├── OptionChainTab.tsx   # Carnet d'options en temps réel
-│   │   │       ├── BsmTab.tsx           # Calculateur BSM
-│   │   │       ├── CrrTab.tsx           # Modèle CRR
-│   │   │       ├── SimulationTab.tsx    # Heatmap simulation
-│   │   │       ├── SmileTab.tsx         # Smile de volatilité
-│   │   │       ├── SurfaceTab.tsx       # Surface IV 3D
-│   │   │       ├── ExoticsTab.tsx       # Options exotiques
-│   │   │       └── StrategiesTab.tsx    # Stratégies multi-legs
-│   │   └── styles/
-│   ├── package.json
-│   └── vite.config.ts
+│   │   │       ├── Plot.tsx          # Wrapper Plotly en lazy loading (React.lazy + Suspense)
+│   │   │       ├── OptionChainTab.tsx
+│   │   │       ├── BsmTab.tsx
+│   │   │       ├── CrrTab.tsx
+│   │   │       ├── SimulationTab.tsx
+│   │   │       ├── SmileTab.tsx
+│   │   │       ├── SurfaceTab.tsx
+│   │   │       ├── ExoticsTab.tsx
+│   │   │       └── StrategiesTab.tsx
+│   │   ├── lib/
+│   │   │   └── api.ts                # Client HTTP typé (fetch)
+│   │   └── types/
+│   │       └── api.ts                # Interfaces TypeScript de l'API
+│   ├── package.json                  # Dépendances optimisées sans bibliothèques inutilisées
+│   └── vite.config.ts                # Configuration Vite + proxy de développement /api
 │
-├── tests/                            # Tests de régression
-│   ├── conftest.py                   # Fixtures pytest
-│   ├── test_app.py                   # Tests interface / store
-│   ├── test_data.py                  # Tests données (FRED, yfinance)
-│   └── test_pricing.py               # Régression BSM, CRR, Grecs, exotiques
-│
-├── requirements.txt
+├── vercel.json                       # Configuration de déploiement Vercel
+├── .python-version                   # Version Python 3.12 épinglée pour Vercel
+├── .env.example                      # Exemple de variables d'environnement
 └── README.md
 ```
 
 ---
 
-## Dépendances principales
+## Détails de la migration (v3.0 → v4.0 Vercel)
 
-### Backend Python
+Dans cette version :
+1. **Remplacement complet d'Eel par FastAPI** :
+   - Suppression du lanceur desktop `main.py` et du fichier `api.py`.
+   - Création de `backend/main.py` exposant des routes REST standardisées sous `/api/*` avec gestion d'erreurs HTTP cohérente (422 pour les erreurs de validation, 502/503 pour les pannes réseau de marché).
+2. **Architecture 100 % sans état (Stateless)** :
+   - Suppression de `market_data_store.py` et de toute variable globale en mémoire.
+   - Les paramètres de marché ($S, r, q, \text{hist\_vol}$) sont désormais fournis explicitement dans le corps des requêtes par le frontend.
+3. **Optimisations et sécurité pour Vercel Serverless** :
+   - Plafonnement du calcul Monte Carlo à 10 000 000 de cellules (empreinte RAM mesurée à ~344 Mo, largement sous les 2 Go de Vercel).
+   - Plafonnement du nombre d'échéances pour la surface de volatilité (6 échéances max avec budget temporel de 12 secondes).
+   - Appel `.info` unique et mutualisé vers Yahoo Finance dans `data_fetcher.py`.
+   - Normalisation du grec Vega par point de volatilité (1 %) directement dans le backend BSM et CRR (standard Bloomberg).
+4. **Allègement drastique des bundles** :
+   - **Backend** : suppression de `matplotlib`, `plotly` et `eel` des dépendances Python. Bundle d'installation réduit à **254 Mo décompressé** (limite Vercel : 500 Mo).
+   - **Frontend** : suppression de 9 dépendances npm non utilisées (`@emotion/*`, `@mui/*`, `clsx`, `lucide-react`, `motion`, `react-router`, `tailwind-merge`).
+   - Découpage du code (*code-splitting*) de Plotly.js via `React.lazy` : le bundle JS initial passe de **5 030 ko (1 547 ko gzip)** à **220 ko (61 ko gzip)**, soit une réduction de **96 %** de la charge initiale !
 
-| Package                     | Usage                                     |
-| --------------------------- | ----------------------------------------- |
-| `eel`                     | Pont Python ↔ React (WebSocket)          |
-| `yfinance`                | Prix spot, IV, chaînes d'options         |
-| `scipy`                   | CDF normale, interpolation, optimisation  |
-| `numpy`                   | Calcul numérique                         |
-| `pandas`                  | Manipulation de données                  |
-| `requests`                | API FRED                                  |
-| `python-dotenv`           | Variables d'environnement                 |
-| `pytest` / `pytest-cov` | Tests de régression                      |
+---
 
-### Frontend React
+## Tests
 
-| Package                             | Usage                             |
-| ----------------------------------- | --------------------------------- |
-| `react` 18 + `typescript`       | Interface utilisateur             |
-| `vite` 6                          | Build et dev server               |
-| `tailwindcss` 4                   | Styles utilitaires                |
-| `plotly.js` / `react-plotly.js` | Graphiques interactifs            |
-| `@radix-ui/*`                     | Composants UI accessibles         |
-| `lucide-react`                    | Icônes                           |
-| `motion`                          | Animations                        |
-| `react-dnd`                       | Drag & drop (legs de stratégies) |
+Exécution de la suite complète de 105 tests de régression :
+
+```bash
+pytest backend/
+```
+
+Vérification du typage TypeScript et build frontend :
+
+```bash
+cd frontend
+npx tsc --noEmit
+npm run build
+```
 
 ---
 
 ## Licence
 
 MIT : voir [`LICENSE`](LICENSE).
-
----
-
-*Dernière mise à jour : juin 2026 : migration PySide6 → React/TypeScript + Eel, ajout onglet Option Chain (v3.0)*
