@@ -31,14 +31,14 @@
 
 ### Modèles de pricing
 
-| Modèle | Type | Méthode |
-| :--- | :---: | :--- |
-| **Black-Scholes-Merton** | Européenne | Formule fermée analytique |
-| **Cox-Ross-Rubinstein** | Américaine | Arbre binomial avec exercice anticipé |
+| Modèle                                            |    Type    | Méthode                                          |
+| :------------------------------------------------- | :---------: | :------------------------------------------------ |
+| **Black-Scholes-Merton**                     | Européenne | Formule fermée analytique                        |
+| **Cox-Ross-Rubinstein**                      | Américaine | Arbre binomial avec exercice anticipé            |
 | **Rubinstein & Reiner (1991) + Monte Carlo** | Barrières | Analytique (4 types) + simulation GBM avec rebate |
-| **Monte Carlo** | Asiatique | Moyenne arithmétique / géométrique |
-| **Monte Carlo** | Lookback | Prix extrême flottant / fixe |
-| **BSM fermée + Monte Carlo** | Digitale | Cash-or-Nothing analytique et numérique |
+| **Monte Carlo**                              |  Asiatique  | Moyenne arithmétique / géométrique             |
+| **Monte Carlo**                              |  Lookback  | Prix extrême flottant / fixe                     |
+| **BSM fermée + Monte Carlo**                |  Digitale  | Cash-or-Nothing analytique et numérique          |
 
 ### Données de marché en temps réel
 
@@ -49,7 +49,7 @@
 
 ### Grecs
 
-Delta ($\Delta$), Gamma ($\Gamma$), Theta ($\Theta$/jour), Vega ($\nu$, normalisé par point de vol de 1 %), Rho ($\rho$/100), calculés analytiquement (BSM) ou par différences finies (CRR).
+Delta ($\Delta$), Gamma ($\Gamma$), Theta ($\Theta$/jour), Vega ($\nu$, normalisé par point de vol de 1 %), Rho ($\rho$, pour 100 bps), calculés analytiquement (BSM) ou par différences finies (CRR).
 
 ---
 
@@ -90,42 +90,51 @@ L'application est architecturée pour un déploiement unifié sur **Vercel** : f
 ## Interface 8 onglets
 
 ### 1 · Option Chain
+
 Carnet d'options en temps réel : strikes, bid/ask, IV implicite, volume, open interest et delta BSM pour calls et puts. Sélection de l'échéance parmi toutes les dates disponibles.
 
 ![Option Chain](image/README/1782558153085.png)
 
 ### 2 · Calculateur BSM
+
 Pricing européen en temps réel avec récupération automatique de S, r, q et IV marché.
 
 ![BSM](image/README/1782558205557.png)
 
 ### 3 · Modèle CRR
+
 Pricing américain par arbre binomial. Comparaison directe avec le prix BSM européen et grecs par différences finies.
 
 ![CRR](image/README/1782558227460.png)
 
 ### 4 · Simulation
+
 Heatmap croisée volatilité $\times$ prix sous-jacent visualisant l'impact combiné de Gamma et Vega sur le prix de l'option. Plafond de calcul sécurisé pour l'exécution serverless.
 
 ![Simulation](image/README/1782558245403.png)
 
 ### 5 · Smile de volatilité
+
 Tracé IV vs Strike par inversion numérique de BSM (méthode de Brent) sur les prix mid Calls/Puts OTM.
 
 ![Smile](image/README/1782558264736.png)
 
 ### 6 · Surface IV 3D
+
 Surface de volatilité implicite interactive (Strike ou Moneyness $\times$ Maturité $\times$ IV) avec budget temporel et limitation adaptative d'échéances pour des temps de réponse rapides.
 
 ![Surface](image/README/1782558286358.png)
 
 ### 7 · Options exotiques
+
 Pricing analytique et Monte Carlo pour options barrières, asiatiques, lookbacks et digitales. Trajectoires GBM simulées, distribution des payoffs et profil à maturité.
 
 ![Exotics](image/README/1782558309020.png)
 
 ### 8 · Stratégies
+
 Construction et analyse de stratégies multi-legs avec données de marché en temps réel :
+
 - **22 stratégies en 5 familles** : Positions de base, Spreads directionnels, Volatilité, Butterflies, Condors.
 - **Métriques calculées** : coût net, breakevens, gain/perte maximum et grecs agrégés BSM.
 
@@ -142,16 +151,15 @@ Construction et analyse de stratégies multi-legs avec données de marché en te
 ## Installation et Lancement
 
 ### Prérequis
+
 - **Python 3.12+**
 - **Node.js 18+** et **npm**
 - Clé d'API FRED gratuite (pour le taux sans risque SOFR) : [Obtenir une clé FRED](https://fred.stlouisfed.org/docs/api/api_key.html)
 
 ### Configuration des variables d'environnement
-Copiez `.env.example` en `.env` à la racine :
-```bash
-cp .env.example .env
-```
-Renseignez votre clé FRED :
+
+Renseignez votre clé FRED dans un .env :
+
 ```env
 FRED_API_KEY=votre_cle_fred_ici
 ```
@@ -263,32 +271,12 @@ option-pricer/
 │
 ├── vercel.json                       # Configuration de déploiement Vercel
 ├── .python-version                   # Version Python 3.12 épinglée pour Vercel
-├── .env.example                      # Exemple de variables d'environnement
 └── README.md
 ```
 
 ---
 
-## Détails de la migration (v3.0 → v4.0 Vercel)
 
-Dans cette version :
-1. **Remplacement complet d'Eel par FastAPI** :
-   - Suppression du lanceur desktop `main.py` et du fichier `api.py`.
-   - Création de `backend/main.py` exposant des routes REST standardisées sous `/api/*` avec gestion d'erreurs HTTP cohérente (422 pour les erreurs de validation, 502/503 pour les pannes réseau de marché).
-2. **Architecture 100 % sans état (Stateless)** :
-   - Suppression de `market_data_store.py` et de toute variable globale en mémoire.
-   - Les paramètres de marché ($S, r, q, \text{hist\_vol}$) sont désormais fournis explicitement dans le corps des requêtes par le frontend.
-3. **Optimisations et sécurité pour Vercel Serverless** :
-   - Plafonnement du calcul Monte Carlo à 10 000 000 de cellules (empreinte RAM mesurée à ~344 Mo, largement sous les 2 Go de Vercel).
-   - Plafonnement du nombre d'échéances pour la surface de volatilité (6 échéances max avec budget temporel de 12 secondes).
-   - Appel `.info` unique et mutualisé vers Yahoo Finance dans `data_fetcher.py`.
-   - Normalisation du grec Vega par point de volatilité (1 %) directement dans le backend BSM et CRR (standard Bloomberg).
-4. **Allègement drastique des bundles** :
-   - **Backend** : suppression de `matplotlib`, `plotly` et `eel` des dépendances Python. Bundle d'installation réduit à **254 Mo décompressé** (limite Vercel : 500 Mo).
-   - **Frontend** : suppression de 9 dépendances npm non utilisées (`@emotion/*`, `@mui/*`, `clsx`, `lucide-react`, `motion`, `react-router`, `tailwind-merge`).
-   - Découpage du code (*code-splitting*) de Plotly.js via `React.lazy` : le bundle JS initial passe de **5 030 ko (1 547 ko gzip)** à **220 ko (61 ko gzip)**, soit une réduction de **96 %** de la charge initiale !
-
----
 
 ## Tests
 
