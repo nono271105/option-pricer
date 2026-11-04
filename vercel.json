@@ -11,8 +11,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "memory": 1024
+      "excludeFiles": "{frontend/**,**/node_modules/**,image/**,backend/tests/**,README.md,LICENSE}"
     }
   }
 }
-
