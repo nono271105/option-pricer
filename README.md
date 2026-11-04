@@ -202,14 +202,18 @@ vercel dev
 
 ## Déploiement sur Vercel
 
-Le projet est configuré pour un déploiement Vercel en un clic sans configuration supplémentaire :
+Le projet déploie deux services Vercel sur le même domaine :
 
 1. Importez le dépôt Git dans votre tableau de bord **Vercel**.
 2. Configurez la variable d'environnement dans **Settings > Environment Variables** :
    - `FRED_API_KEY` : votre clé d'API FRED.
-3. Déployez !
-   - Le frontend est compilé avec `cd frontend && npm ci && npm run build`.
-   - L'API FastAPI est instanciée via `api/index.py` comme Serverless Function avec réécriture `/api/(.*)`.
+3. Déployez. Vercel construit indépendamment :
+   - le service `app`, qui expose l'API FastAPI sous `/api/*` ;
+   - le service `frontend`, qui sert l'application Vite sur les autres chemins.
+
+Les appels du navigateur utilisent des URLs relatives `/api/...` et sont routés vers `app`. Le frontend est public sur le domaine du projet ; l'API est publique uniquement sous `/api/*`. Aucun service-to-service binding n'est nécessaire pour ces appels du navigateur.
+
+Pour tester le routage local des deux services, lancez `vercel dev` à la racine du dépôt.
 
 ---
 

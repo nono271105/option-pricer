@@ -238,13 +238,6 @@ async def calculate_strategy(req: StrategyRequest) -> Dict[str, Any]:
         hist_vol=req.hist_vol,
     )
 
-# Frontend statique (build Vite écrit dans public/ au déploiement).
-# Routes API prioritaires ; check_dir=False pour les tests et le dev local
-# (le dossier n'existe qu'après `npm run build -- --outDir ../public`).
-FRONTEND_DIR = _backend_dir.parent / "public"
-app.frontend("/", directory=FRONTEND_DIR, check_dir=False)
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
