@@ -28,7 +28,7 @@ frontend/.vite/
 
 # Build outputs
 frontend/dist/
-public/
+/public/
 build/
 dist/
 

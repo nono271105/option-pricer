@@ -116,8 +116,15 @@ export default function App() {
 
           {/* Top Header Row */}
           <div className="flex items-center justify-between px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#333333]">
-            <div className="flex items-center gap-4">
-              <span className="font-bold text-white"> Quote Panel</span>
+            <div className="flex items-center gap-2">
+              <img
+                src="/option-pricer-mark.png"
+                alt=""
+                width="28"
+                height="28"
+                className="shrink-0"
+              />
+              <span className="font-bold text-white">Option Pricer</span>
             </div>
             <div className="flex items-center gap-2">
               {market.isLoading && (
