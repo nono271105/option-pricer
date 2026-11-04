@@ -4,7 +4,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "excludeFiles": "{frontend/**,image/**,backend/tests/**}"
+      "excludeFiles": "{frontend/**,image/**,Document/**,backend/tests/**}"
     }
   }
 }
