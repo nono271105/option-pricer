@@ -76,7 +76,7 @@ export function ExoticsTab() {
       const barrierType = (barrierTypeRef.current?.value || 'down-and-out') as BarrierType;
       const averaging = avgRef.current?.value || 'arithmetic';
       const payoffAmt = parseFloat(payoffAmtRef.current?.value || '1');
-      const nSims = parseInt(nSimsRef.current?.value || '50000');
+      const nSims = parseInt(nSimsRef.current?.value || '30000');
       const nSteps = parseInt(nStepsRef.current?.value || '252');
       const rebate = showBarrier ? Math.max(0, parseFloat(rebateRef.current?.value || '0') || 0) : 0;
 

@@ -191,31 +191,11 @@ npm run dev
 
 L'application est accessible sur `http://localhost:5173`. Le serveur de dev Vite transfère automatiquement les requêtes `/api/*` vers `http://localhost:8000`.
 
-#### Option 2 : Simulation Vercel locale via Vercel CLI
-
-```bash
-npm i -g vercel
-vercel dev
-```
-
 ---
 
-## Déploiement sur Vercel
 
-Le projet déploie deux services Vercel sur le même domaine :
 
-1. Importez le dépôt Git dans votre tableau de bord **Vercel**.
-2. Configurez la variable d'environnement dans **Settings > Environment Variables** :
-   - `FRED_API_KEY` : votre clé d'API FRED.
-3. Déployez. Vercel construit indépendamment :
-   - le service `app`, qui expose l'API FastAPI sous `/api/*` ;
-   - le service `frontend`, qui sert l'application Vite sur les autres chemins.
 
-Les appels du navigateur utilisent des URLs relatives `/api/...` et sont routés vers `app`. Le frontend est public sur le domaine du projet ; l'API est publique uniquement sous `/api/*`. Aucun service-to-service binding n'est nécessaire pour ces appels du navigateur.
-
-Pour tester le routage local des deux services, lancez `vercel dev` à la racine du dépôt.
-
----
 
 ## Structure du projet
 
@@ -279,8 +259,6 @@ option-pricer/
 ```
 
 ---
-
-
 
 ## Tests
 
