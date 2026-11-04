@@ -37,6 +37,7 @@ frontend/.vite/
 
 # Vite build output
 frontend/dist/
+public/
 
 # OS / IDE
 .DS_Store
