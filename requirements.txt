@@ -1,4 +1,4 @@
-# API Web (FastAPI)
+# Dépendances de production (lues par Vercel)
 fastapi==0.162.0
 
 # Data Science & Finance
@@ -10,4 +10,3 @@ requests==2.34.2
 
 # Utilitaires
 python-dotenv==1.2.2
-

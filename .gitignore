@@ -2,42 +2,38 @@
 .env
 .env.local
 .env.*.local
-.vercel/
-.vercel
+
+# Python
 venv/
 .venv/
 env/
-
-# Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
 .pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
-build/
-dist/
 *.egg-info/
 .ruff_cache/
 .mypy_cache/
 
 # Frontend / Node
 node_modules/
-frontend/node_modules/
 frontend/.eslintcache
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
 *.log
 .vite/
 frontend/.vite/
 
-# Vite build output
+# Build outputs
 frontend/dist/
 public/
+build/
+dist/
+
+# Vercel (local CLI cache)
+.vercel/
 
 # OS / IDE
 .DS_Store
@@ -49,5 +45,5 @@ Thumbs.db
 *.swo
 *~
 
-# Documents
+# Contenu non-versionné
 Document/
