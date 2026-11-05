@@ -114,3 +114,18 @@ class StrategyRequest(BaseModel):
     expiry_str: str
     hist_vol: Optional[float] = None
 
+
+class CustomStrategyLegRequest(BaseModel):
+    option_type: OptionType
+    position: Position
+    strike: float = Field(..., gt=0)
+    expiry_str: str = Field(..., min_length=1)
+
+
+class CustomStrategyRequest(BaseModel):
+    ticker: str = Field(..., min_length=1)
+    S: float = Field(..., gt=0)
+    r: float
+    q: float = Field(..., ge=0, lt=1)
+    hist_vol: Optional[float] = Field(default=None, gt=0, le=10)
+    legs: list[CustomStrategyLegRequest] = Field(..., min_length=1, max_length=50)

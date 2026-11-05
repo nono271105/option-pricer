@@ -178,3 +178,34 @@ export interface StrategyResult {
   sigma_source: string;
   error: string | null;
 }
+
+export interface CustomStrategyLegInput {
+  option_type: 'call' | 'put';
+  position: 'long' | 'short';
+  strike: number;
+  expiry_str: string;
+}
+
+export interface CustomStrategyLegResult extends CustomStrategyLegInput {
+  expiry: string;
+  premium: number;
+  premium_source: string;
+  expiry_used: string | null;
+  sigma: number;
+  sigma_source: string;
+  pricing_note: string | null;
+}
+
+export interface CustomStrategyResult {
+  ticker: string;
+  legs: CustomStrategyLegResult[];
+  initial_net_flow: number;
+  current_model_value: number;
+  current_model_pnl: number;
+  value_today_data: StrategyValuePoint[];
+  payoff_data: PricePoint[];
+  has_shared_expiry: boolean;
+  metrics: StrategyMetrics;
+  greeks: Greeks;
+  error: string | null;
+}

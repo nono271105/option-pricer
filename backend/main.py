@@ -34,6 +34,7 @@ from schemas import (
     SurfaceRequest,
     ExoticRequest,
     StrategyRequest,
+    CustomStrategyRequest,
 )
 
 logging.basicConfig(
@@ -237,6 +238,19 @@ async def calculate_strategy(req: StrategyRequest) -> Dict[str, Any]:
         expiry_str=req.expiry_str,
         hist_vol=req.hist_vol,
     )
+
+
+@app.post("/api/custom-strategy")
+async def calculate_custom_strategy(req: CustomStrategyRequest) -> Dict[str, Any]:
+    return services.calculate_custom_strategy(
+        ticker=req.ticker,
+        S=req.S,
+        r=req.r,
+        q=req.q,
+        hist_vol=req.hist_vol,
+        legs=[leg.model_dump() for leg in req.legs],
+    )
+
 
 if __name__ == "__main__":
     import uvicorn

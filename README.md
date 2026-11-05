@@ -133,10 +133,13 @@ Pricing analytique et Monte Carlo pour options barrières, asiatiques, lookbacks
 
 ### 8 · Stratégies
 
-Construction et analyse de stratégies multi-legs avec données de marché en temps réel :
+Construction et analyse de stratégies multi-legs prédéfinies ou personnalisées avec données de marché :
 
 - **22 stratégies en 5 familles** : Positions de base, Spreads directionnels, Volatilité, Butterflies, Condors.
 - **Métriques calculées** : coût net, breakevens, gain/perte maximum et grecs agrégés BSM.
+- **Stratégies personnalisées** : ajout jusqu’à 50 jambes call/put, long/short, strike et échéance cotée propres à chaque jambe. La cotation exacte est utilisée si disponible, sinon une estimation BSM est signalée.
+- La valeur théorique et les grecs sont agrégés à aujourd’hui pour les échéances propres à chaque jambe.
+- Le payoff et ses maximums ne sont affichés que si toutes les jambes partagent une échéance.
 
 ![Strategies](image/README/1782558324670.png)
 
@@ -192,10 +195,6 @@ npm run dev
 L'application est accessible sur `http://localhost:5173`. Le serveur de dev Vite transfère automatiquement les requêtes `/api/*` vers `http://localhost:8000`.
 
 ---
-
-
-
-
 
 ## Structure du projet
 

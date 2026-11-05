@@ -719,6 +719,173 @@ class TestVolatilitySmileLogic:
 
 
 # ============================================================================
+#  CUSTOM STRATEGIES
+# ============================================================================
+
+class TestCustomStrategyPricing:
+    def _chain(self, calls=None, puts=None):
+        chain = MagicMock()
+        chain.calls = pd.DataFrame(calls or [])
+        chain.puts = pd.DataFrame(puts or [])
+        return chain
+
+    def _quote_row(self, strike, option_type, expiry, sigma=0.25):
+        from logic.bsm_logic import OptionModels
+
+        T = (datetime.strptime(expiry, "%Y-%m-%d").date() - date.today()).days / 365
+        price = OptionModels().black_scholes_price(
+            S=100, K=strike, T=T, r=0.04, sigma=sigma, q=0.01,
+            option_type=option_type,
+        )
+        return {
+            "strike": strike,
+            "bid": price - 0.01,
+            "ask": price + 0.01,
+            "lastPrice": price,
+            "impliedVolatility": sigma,
+        }
+
+    def _run(self, legs, expiries, chains, hist_vol=0.2):
+        import services
+
+        with (
+            patch.object(services._data_fetcher, "get_available_expiries", return_value=expiries),
+            patch.object(
+                services._data_fetcher,
+                "get_option_chain_for_expiry",
+                side_effect=lambda ticker, expiry: chains[expiry],
+            ),
+        ):
+            return services.calculate_custom_strategy(
+                ticker=" aapl ", S=100, r=0.04, q=0.01, hist_vol=hist_vol,
+                legs=legs,
+            )
+
+    def test_mixed_expiries_value_each_leg_today_without_expiry_payoff(self):
+        expiry_1 = (date.today() + timedelta(days=30)).isoformat()
+        expiry_2 = (date.today() + timedelta(days=60)).isoformat()
+        chains = {
+            expiry_1: self._chain(calls=[self._quote_row(100, "call", expiry_1)]),
+            expiry_2: self._chain(puts=[self._quote_row(95, "put", expiry_2)]),
+        }
+        result = self._run([
+            {"option_type": "call", "position": "long", "strike": 100, "expiry_str": expiry_1},
+            {"option_type": "put", "position": "short", "strike": 95, "expiry_str": expiry_2},
+        ], [expiry_1, expiry_2], chains)
+
+        assert result["ticker"] == "AAPL"
+        assert result["has_shared_expiry"] is False
+        assert result["payoff_data"] == []
+        assert result["metrics"]["max_gain"] is None
+        assert result["metrics"]["max_loss"] is None
+        assert [leg["expiry"] for leg in result["legs"]] == [expiry_1, expiry_2]
+        assert all(leg["premium_source"] == "Cotation" for leg in result["legs"])
+        assert result["legs"][0]["expiry_used"] == expiry_1
+        assert result["legs"][1]["expiry_used"] == expiry_2
+        assert len(result["value_today_data"]) == 300
+        assert set(result["greeks"]) == {"delta", "gamma", "theta", "vega", "rho"}
+        assert result["current_model_pnl"] == pytest.approx(0, abs=0.02)
+        option_models = OptionModels()
+        expected_greeks = {}
+        for option_type, strike, expiry, sign in (
+            ("call", 100, expiry_1, 1),
+            ("put", 95, expiry_2, -1),
+        ):
+            T = (datetime.strptime(expiry, "%Y-%m-%d").date() - date.today()).days / 365
+            for name, value in option_models.calculate_greeks(
+                S=100, K=strike, T=T, r=0.04, sigma=0.25, q=0.01,
+                option_type=option_type,
+            ).items():
+                expected_greeks[name] = expected_greeks.get(name, 0) + sign * value
+        for greek, expected in expected_greeks.items():
+            assert result["greeks"][greek] == pytest.approx(expected, abs=1e-6)
+
+    def test_shared_expiry_returns_payoff_and_maximums(self):
+        expiry = (date.today() + timedelta(days=30)).isoformat()
+        chains = {expiry: self._chain(calls=[
+            self._quote_row(100, "call", expiry),
+            self._quote_row(110, "call", expiry),
+        ])}
+        result = self._run([
+            {"option_type": "call", "position": "long", "strike": 100, "expiry_str": expiry},
+            {"option_type": "call", "position": "short", "strike": 110, "expiry_str": expiry},
+        ], [expiry], chains)
+
+        assert result["has_shared_expiry"] is True
+        assert len(result["payoff_data"]) == 300
+        assert result["metrics"]["max_gain"] is not None
+        assert result["metrics"]["max_loss"] is not None
+        assert result["metrics"]["max_gain"] > 0
+
+    def test_unlimited_shared_expiry_gain_is_json_safe(self):
+        expiry = (date.today() + timedelta(days=30)).isoformat()
+        chains = {expiry: self._chain(calls=[self._quote_row(100, "call", expiry)])}
+        result = self._run([
+            {"option_type": "call", "position": "long", "strike": 100, "expiry_str": expiry},
+        ], [expiry], chains)
+
+        assert result["has_shared_expiry"] is True
+        assert result["metrics"]["max_gain"] is None
+        assert result["metrics"]["max_loss"] is not None
+
+    def test_missing_exact_strike_falls_back_to_bsm_with_source_note(self):
+        expiry = (date.today() + timedelta(days=30)).isoformat()
+        chains = {expiry: self._chain(calls=[self._quote_row(105, "call", expiry)])}
+        result = self._run([
+            {"option_type": "call", "position": "long", "strike": 100, "expiry_str": expiry},
+        ], [expiry], chains)
+
+        leg = result["legs"][0]
+        assert leg["premium_source"] == "BSM estimé"
+        assert leg["expiry_used"] is None
+        assert leg["pricing_note"] == "Strike non coté, estimation BSM"
+        assert leg["premium"] > 0
+
+    def test_custom_leg_rejects_non_listed_expiry(self):
+        expiry = (date.today() + timedelta(days=30)).isoformat()
+        import services
+
+        with patch.object(services._data_fetcher, "get_available_expiries", return_value=[]):
+            with pytest.raises(services.DataSourceError):
+                services.calculate_custom_strategy(
+                    ticker="AAPL", S=100, r=0.04, q=0.01, hist_vol=0.2,
+                    legs=[{
+                        "option_type": "call", "position": "long",
+                        "strike": 100, "expiry_str": expiry,
+                    }],
+                )
+
+    def test_custom_strategy_endpoint_validates_and_delegates(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        import services
+
+        client = TestClient(app)
+        expiry = (date.today() + timedelta(days=30)).isoformat()
+        request = {
+            "ticker": "AAPL",
+            "S": 100,
+            "r": 0.04,
+            "q": 0.01,
+            "hist_vol": 0.2,
+            "legs": [{
+                "option_type": "call", "position": "long",
+                "strike": 100, "expiry_str": expiry,
+            }],
+        }
+        expected = {"ticker": "AAPL", "legs": [], "error": None}
+        with patch.object(services, "calculate_custom_strategy", return_value=expected) as calculate:
+            response = client.post("/api/custom-strategy", json=request)
+        assert response.status_code == 200
+        assert response.json() == expected
+        assert calculate.call_args.kwargs["legs"] == request["legs"]
+
+        request["legs"] = request["legs"] * 51
+        response = client.post("/api/custom-strategy", json=request)
+        assert response.status_code == 422
+
+
+# ============================================================================
 #  API EXOTICS (TestClient)
 # ============================================================================
 

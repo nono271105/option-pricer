@@ -17,6 +17,8 @@ import type {
   SurfaceResult,
   ExoticResult,
   StrategyResult,
+  CustomStrategyLegInput,
+  CustomStrategyResult,
 } from '../types/api';
 
 const API_BASE = '/api';
@@ -276,6 +278,24 @@ export async function calculateStrategy(
     r,
     q,
     expiry_str,
+    hist_vol: hist_vol ?? null,
+  });
+}
+
+export async function calculateCustomStrategy(
+  ticker: string,
+  S: number,
+  r: number,
+  q: number,
+  legs: CustomStrategyLegInput[],
+  hist_vol?: number | null
+): Promise<CustomStrategyResult> {
+  return postJson<CustomStrategyResult>('/custom-strategy', {
+    ticker,
+    S,
+    r,
+    q,
+    legs,
     hist_vol: hist_vol ?? null,
   });
 }

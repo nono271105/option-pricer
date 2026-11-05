@@ -4,6 +4,7 @@ import { useMarket } from '../App';
 import { getStrategyNames, calculateStrategy } from '../../lib/api';
 import type { Leg } from '../../types/api';
 import { computeDaysFromDate, formatDateFR, getDefaultMaturity } from '../../lib/dates';
+import { CustomStrategyBuilder } from './CustomStrategyBuilder';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export function StrategiesTab() {
 
   const [family, setFamily]     = useState('Spreads directionnels');
   const [strategy, setStrategy] = useState('Bull Call Spread');
+  const [customMode, setCustomMode] = useState(false);
 
   const [state, setState] = useState<StrategyState>({
     strategy_name: null, legs: [],
@@ -144,6 +146,10 @@ export function StrategiesTab() {
   };
   const initialNetFlow = state.metrics?.cost == null ? null : -state.metrics.cost;
 
+  if (customMode) {
+    return <CustomStrategyBuilder onBack={() => setCustomMode(false)} />;
+  }
+
   return (
     <div className="flex flex-col h-full gap-1 p-1 overflow-auto bg-[#000000]">
 
@@ -156,8 +162,12 @@ export function StrategiesTab() {
 
       {/* ── Barre de sélection ── */}
       <div className="border border-[#222222] shrink-0">
-        <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
+        <div className="flex items-center justify-between px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
           <span className="font-bold text-white"> STRATÉGIES : Sélection &amp; Analyse</span>
+          <button type="button" onClick={() => setCustomMode(true)}
+            className="border border-[#4A90E2] px-2 py-1 text-[10px] font-bold text-white hover:bg-[#17304A] focus-visible:outline focus-visible:outline-1 focus-visible:outline-white">
+            Créer une stratégie personnalisée
+          </button>
         </div>
         <div className="flex items-center gap-4 px-3 py-2 flex-wrap">
           <label className="flex items-center gap-1.5 text-[10px] text-[#888888]">

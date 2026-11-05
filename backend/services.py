@@ -38,6 +38,7 @@ from validation import (
     validate_exotic_type,
     validate_r,
     validate_q,
+    validate_sigma,
     validate_rebate,
     validate_date_str,
     validate_mc_budget,
@@ -772,5 +773,215 @@ def calculate_strategy(
         "sigma": sigma_used,
         "sigma_source": sigma_source,
         "greeks": greeks,
+        "error": None,
+    }
+
+
+def calculate_custom_strategy(
+    ticker: str,
+    S: float,
+    r: float,
+    q: float,
+    legs: List[Dict[str, Any]],
+    hist_vol: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Value custom option legs today and, for a shared expiry, at expiration."""
+    ticker = ticker.strip().upper()
+    if not ticker:
+        raise ValueError("VALIDATION_INVALID_VALUE: Ticker vide", "VALIDATION_INVALID_VALUE")
+    if not legs or len(legs) > 50:
+        raise ValueError(
+            "VALIDATION_INVALID_VALUE: Une stratégie doit contenir entre 1 et 50 jambes.",
+            "VALIDATION_INVALID_VALUE",
+        )
+
+    validate_r(float(r))
+    validate_q(float(q))
+    if hist_vol is not None:
+        validate_sigma(float(hist_vol))
+    try:
+        available_expiries = _data_fetcher.get_available_expiries(ticker)
+    except Exception as exc:
+        logger.exception("Impossible de charger les échéances pour %s", ticker)
+        raise DataSourceError(
+            f"Impossible de charger les échéances cotées pour {ticker}."
+        ) from exc
+    if not available_expiries:
+        raise DataSourceError(f"Aucune échéance cotée disponible pour {ticker}.")
+
+    S_f, r_f, q_f = float(S), float(r), float(q)
+    base_sigma, base_sigma_source = _select_sigma(None, hist_vol)
+    parsed_legs: List[Dict[str, Any]] = []
+
+    for index, leg in enumerate(legs, start=1):
+        option_type = leg["option_type"]
+        position = leg["position"]
+        strike = float(leg["strike"])
+        validate_pricing_params(S_f, strike, 1.0, r_f, q_f, option_type)
+        validate_position(position)
+
+        expiry_dt = validate_date_str(
+            leg["expiry_str"], field_name=f"legs[{index - 1}].expiry_str"
+        )
+        expiry = expiry_dt.strftime("%Y-%m-%d")
+        if expiry not in available_expiries:
+            raise ValueError(
+                f"VALIDATION_INVALID_VALUE: L'échéance {expiry} de la jambe {index} "
+                f"n'est pas une échéance cotée pour {ticker}.",
+                "VALIDATION_INVALID_VALUE",
+            )
+        T = max((expiry_dt.date() - date.today()).days / 365.0, 1e-6)
+
+        quote_note = None
+        try:
+            chain = _data_fetcher.get_option_chain_for_expiry(ticker, expiry)
+        except Exception as exc:
+            logger.warning(
+                "Chaîne indisponible pour %s %s, estimation BSM: %s",
+                ticker, expiry, exc,
+            )
+            chain = None
+            quote_note = "Chaîne indisponible, estimation BSM"
+        option_data = getattr(chain, "calls" if option_type == "call" else "puts", None)
+        matching_row = None
+        if option_data is not None and not option_data.empty:
+            matches = option_data[np.isclose(option_data["strike"], strike, rtol=0, atol=1e-8)]
+            if not matches.empty:
+                matching_row = matches.iloc[0]
+            else:
+                quote_note = "Strike non coté, estimation BSM"
+        elif quote_note is None:
+            quote_note = "Chaîne vide, estimation BSM"
+
+        market_iv: Optional[float] = None
+        market_price: Optional[float] = None
+        if matching_row is not None:
+            try:
+                candidate_iv = float(matching_row["impliedVolatility"])
+                if np.isfinite(candidate_iv) and 0.001 < candidate_iv <= 10:
+                    market_iv = candidate_iv
+            except (KeyError, TypeError, ValueError):
+                pass
+
+            try:
+                bid = float(matching_row.get("bid", 0) or 0)
+                ask = float(matching_row.get("ask", 0) or 0)
+                last = float(matching_row.get("lastPrice", 0) or 0)
+                candidate_price = (bid + ask) / 2 if bid > 0 and ask > 0 else last
+                if np.isfinite(candidate_price) and candidate_price > 0:
+                    market_price = candidate_price
+            except (TypeError, ValueError):
+                pass
+
+        sigma, sigma_source = (
+            (market_iv, "IV implicite du contrat")
+            if market_iv is not None
+            else (base_sigma, base_sigma_source)
+        )
+        premium_source = "Cotation" if market_price is not None else "BSM estimé"
+        premium = market_price
+        if premium is None:
+            premium = float(_option_models.black_scholes_price(
+                S=S_f, K=strike, T=T, r=r_f, sigma=sigma, q=q_f,
+                option_type=option_type,
+            ))
+            if matching_row is not None:
+                quote_note = "Prix coté indisponible, estimation BSM"
+        if not np.isfinite(premium) or premium < 0:
+            raise DataSourceError(
+                f"Impossible de valoriser la jambe {index} ({option_type} {strike:g}, {expiry})."
+            )
+
+        parsed_legs.append({
+            "option_type": option_type,
+            "position": position,
+            "strike": strike,
+            "expiry": expiry,
+            "premium": premium,
+            "premium_source": premium_source,
+            "expiry_used": expiry if market_price is not None else None,
+            "sigma": sigma,
+            "sigma_source": sigma_source,
+            "T": T,
+            "pricing_note": quote_note,
+        })
+
+    initial_cost = sum(
+        leg["premium"] if leg["position"] == "long" else -leg["premium"]
+        for leg in parsed_legs
+    )
+    S_range = np.linspace(S_f * 0.6, S_f * 1.4, 300)
+    value_today = np.full(len(S_range), -initial_cost, dtype=float)
+    current_model_value = 0.0
+    total_greeks = {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0, "rho": 0.0}
+
+    for leg in parsed_legs:
+        sign = 1 if leg["position"] == "long" else -1
+        model_prices = _option_models.black_scholes_price(
+            S=S_range, K=leg["strike"], T=leg["T"], r=r_f,
+            sigma=leg["sigma"], q=q_f, option_type=leg["option_type"],
+        )
+        value_today += sign * model_prices
+        current_model_value += sign * float(_option_models.black_scholes_price(
+            S=S_f, K=leg["strike"], T=leg["T"], r=r_f,
+            sigma=leg["sigma"], q=q_f, option_type=leg["option_type"],
+        ))
+        greeks = _option_models.calculate_greeks(
+            S=S_f, K=leg["strike"], T=leg["T"], r=r_f,
+            sigma=leg["sigma"], q=q_f, option_type=leg["option_type"],
+        )
+        for greek in total_greeks:
+            total_greeks[greek] += sign * greeks[greek]
+
+    shared_expiry = len({leg["expiry"] for leg in parsed_legs}) == 1
+    payoff_data: List[Dict[str, float]] = []
+    metrics: Dict[str, Any] = {
+        "cost": round(float(initial_cost), 4),
+        "breakevens": [],
+        "max_gain": None,
+        "max_loss": None,
+    }
+
+    if shared_expiry:
+        payoff_legs = [
+            {
+                "option_type": leg["option_type"],
+                "position": leg["position"],
+                "strike": leg["strike"],
+                "premium": leg["premium"],
+            }
+            for leg in parsed_legs
+        ]
+        payoff = _strategy_mgr.compute_payoff(payoff_legs, S_range)
+        metrics.update(_strategy_mgr.compute_metrics(payoff_legs, S_range, payoff))
+        for key in ("max_gain", "max_loss"):
+            if not np.isfinite(metrics[key]):
+                metrics[key] = None
+        payoff_data = [
+            {"spot": round(float(spot), 2), "payoff": round(float(value), 4)}
+            for spot, value in zip(S_range, payoff)
+        ]
+
+    return {
+        "ticker": ticker,
+        "legs": [
+            {key: leg[key] for key in (
+                "option_type", "position", "strike", "expiry", "premium",
+                "premium_source", "expiry_used", "sigma", "sigma_source",
+                "pricing_note",
+            )}
+            for leg in parsed_legs
+        ],
+        "initial_net_flow": round(float(-initial_cost), 4),
+        "current_model_value": round(float(current_model_value), 4),
+        "current_model_pnl": round(float(current_model_value - initial_cost), 4),
+        "value_today_data": [
+            {"spot": round(float(spot), 2), "value": round(float(value), 4)}
+            for spot, value in zip(S_range, value_today)
+        ],
+        "payoff_data": payoff_data,
+        "has_shared_expiry": shared_expiry,
+        "metrics": metrics,
+        "greeks": {key: round(float(value), 6) for key, value in total_greeks.items()},
         "error": None,
     }
