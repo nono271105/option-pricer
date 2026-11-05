@@ -13,6 +13,7 @@ import os
 import time
 import threading
 import logging
+from collections import Counter
 from unittest.mock import patch, MagicMock, PropertyMock
 from datetime import date, datetime, timedelta
 
@@ -407,6 +408,92 @@ class TestStrategyManager:
         # Gain max plafonné = 5 - 3 = 2
         assert np.isfinite(metrics["max_gain"])
         assert metrics["max_gain"] == pytest.approx(2.0, abs=0.5)
+        assert metrics["max_loss"] == pytest.approx(3.0, abs=0.5)
+
+    def test_metrics_net_opening_cash_flow_matches_leg_flows(self):
+        legs = [
+            {"option_type": "call", "position": "long", "strike": 100, "premium": 30},
+            {"option_type": "call", "position": "short", "strike": 100, "premium": 19},
+        ]
+        spots = np.array([0.0, 100.0, 200.0])
+        payoff = self.sm.compute_payoff(legs, spots)
+        metrics = self.sm.compute_metrics(legs, spots, payoff)
+
+        assert metrics["cost"] == pytest.approx(11.0)
+        np.testing.assert_array_equal(payoff, [-11.0, -11.0, -11.0])
+        assert metrics["max_gain"] == pytest.approx(-11.0)
+        assert metrics["max_loss"] == pytest.approx(11.0)
+
+    def test_paired_strategy_compositions_and_payoffs_are_opposites(self):
+        opposite_pairs = [
+            ("Long Call", "Short Call"),
+            ("Long Put", "Short Put"),
+            ("Bull Call Spread", "Bear Call Spread"),
+            ("Bull Put Spread", "Bear Put Spread"),
+            ("Long Straddle", "Short Straddle"),
+            ("Long Strangle", "Short Strangle"),
+            ("Long Call Butterfly", "Short Call Butterfly"),
+            ("Long Put Butterfly", "Short Put Butterfly"),
+            ("Long Iron Butterfly", "Short Iron Butterfly"),
+            ("Long Call Condor", "Short Call Condor"),
+            ("Long Put Condor", "Short Put Condor"),
+            ("Long Iron Condor", "Short Iron Condor"),
+        ]
+        spots = np.linspace(0, 200, 401)
+
+        def make_legs(strategy_name):
+            legs = []
+            for definition in StrategyManager.STRATEGY_DEFINITIONS[strategy_name]:
+                strike = round(100 * (1 + definition["offset"]), 2)
+                option_type = definition["type"]
+                legs.append({
+                    "option_type": option_type,
+                    "position": definition["pos"],
+                    "strike": strike,
+                    "premium": 1 + strike / 100 + (0.25 if option_type == "put" else 0),
+                })
+            return legs
+
+        for long_name, short_name in opposite_pairs:
+            long_legs = make_legs(long_name)
+            short_legs = make_legs(short_name)
+            long_composition = Counter(
+                (leg["option_type"], leg["strike"], leg["position"]) for leg in long_legs
+            )
+            short_composition = Counter(
+                (leg["option_type"], leg["strike"],
+                 "short" if leg["position"] == "long" else "long")
+                for leg in short_legs
+            )
+            assert long_composition == short_composition, (long_name, short_name)
+
+            long_payoff = self.sm.compute_payoff(long_legs, spots)
+            short_payoff = self.sm.compute_payoff(short_legs, spots)
+            np.testing.assert_allclose(long_payoff, -short_payoff, atol=1e-10)
+
+            for legs, payoff in (
+                (long_legs, long_payoff),
+                (short_legs, short_payoff),
+            ):
+                metrics = self.sm.compute_metrics(legs, spots, payoff)
+                critical_spots = np.array(sorted({
+                    0.0, *(leg["strike"] for leg in legs),
+                }))
+                critical_payoffs = self.sm.compute_payoff(legs, critical_spots)
+                net_call_count = sum(
+                    1 if leg["position"] == "long" else -1
+                    for leg in legs if leg["option_type"] == "call"
+                )
+                if net_call_count > 0:
+                    assert metrics["max_gain"] == np.inf
+                else:
+                    assert metrics["max_gain"] == pytest.approx(critical_payoffs.max())
+                if net_call_count < 0:
+                    assert metrics["max_loss"] == np.inf
+                else:
+                    assert metrics["max_loss"] == pytest.approx(
+                        abs(critical_payoffs.min())
+                    )
 
     def test_metrics_long_put(self):
         legs = [{"option_type": "put", "position": "long", "strike": 100, "premium": 4}]
@@ -832,5 +919,3 @@ class TestMonteCarloBudgetPhase2f:
         assert res.status_code == 422
         assert res.json()["code"] == "VALIDATION_MC_BUDGET_EXCEEDED"
         assert "15,000,000" in res.json()["error"]
-
-

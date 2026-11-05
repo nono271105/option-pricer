@@ -138,10 +138,11 @@ export function StrategiesTab() {
     }
   };
 
-  const costColor = (cost: number | null) => {
-    if (cost === null) return 'text-[#D4D4D4]';
-    return cost < 0 ? 'text-[#FF6B6B]' : 'text-[#6BCB77]';
+  const cashFlowColor = (cashFlow: number | null) => {
+    if (cashFlow === null || cashFlow === 0) return 'text-[#D4D4D4]';
+    return cashFlow < 0 ? 'text-[#FF6B6B]' : 'text-[#6BCB77]';
   };
+  const initialNetFlow = state.metrics?.cost == null ? null : -state.metrics.cost;
 
   return (
     <div className="flex flex-col h-full gap-1 p-1 overflow-auto bg-[#000000]">
@@ -194,7 +195,6 @@ export function StrategiesTab() {
       {/* ── Résultats ── */}
       {state.legs.length > 0 && state.metrics && (
         <div className="flex gap-1 shrink-0">
-
           {/* Tableau des legs */}
           <div className="flex-1 border border-[#222222]">
             <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222]">
@@ -237,10 +237,10 @@ export function StrategiesTab() {
                 })}
                 {/* Ligne coût net */}
                 <tr className="bg-[#0D0D0D] divide-x divide-[#1E1E1E]">
-                  <td colSpan={5} className="py-1 px-2 text-left text-[9px] text-[#666666] uppercase tracking-wider">Coût net total</td>
-                  <td className={`py-1 px-2 font-bold text-[12px] ${costColor(state.metrics.cost)}`}>
-                    {state.metrics.cost !== null
-                      ? `${state.metrics.cost >= 0 ? '+' : ''}${state.metrics.cost.toFixed(4)} $`
+                  <td colSpan={5} className="py-1 px-2 text-left text-[9px] text-[#666666] uppercase tracking-wider">Flux net initial</td>
+                  <td className={`py-1 px-2 font-bold text-[12px] ${cashFlowColor(initialNetFlow)}`}>
+                    {initialNetFlow !== null
+                      ? `${initialNetFlow > 0 ? '+' : ''}${initialNetFlow.toFixed(4)} $`
                       : 'N/C'}
                   </td>
                 </tr>
@@ -272,10 +272,14 @@ export function StrategiesTab() {
 
               {/* Gain / Perte max */}
               <MetricRow label="Gain maximum"
-                value={state.metrics.max_gain !== null ? `+${fmtNum(state.metrics.max_gain)} $` : 'Illimité'}
-                valueClass="text-[#6BCB77]" />
+                value={state.metrics.max_gain !== null
+                  ? `${state.metrics.max_gain > 0 ? '+' : ''}${fmtNum(state.metrics.max_gain)} $`
+                  : 'Illimité'}
+                valueClass={state.metrics.max_gain !== null && state.metrics.max_gain < 0
+                  ? 'text-[#FF6B6B]'
+                  : 'text-[#6BCB77]'} />
               <MetricRow label="Perte maximum"
-                value={state.metrics.max_loss !== null ? `${fmtNum(state.metrics.max_loss)} $` : 'Illimitée'}
+                value={state.metrics.max_loss !== null ? `-${fmtNum(state.metrics.max_loss)} $` : 'Illimitée'}
                 valueClass="text-[#FF6B6B]" />
 
               <div className="h-[1px] bg-[#1E1E1E] my-1.5" />
