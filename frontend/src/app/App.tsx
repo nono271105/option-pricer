@@ -51,7 +51,7 @@ export const useMarket = () => useContext(MarketContext);
 // ── Onglets ───────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'chains',     label: 'Option Chain' },
+  { id: 'chains',     label: "Chaîne d'options" },
   { id: 'bsm',        label: 'Modèle BSM' },
   { id: 'crr',        label: 'Modèle CRR' },
   { id: 'simulation', label: 'Simulation' },
@@ -147,7 +147,7 @@ export default function App() {
 
             {/* Ticker input + bouton fetch */}
             <div className="flex flex-col">
-              <span className="text-[9px] text-[#888888] mb-0.5">Financial Instrument</span>
+              <span className="text-[9px] text-[#888888] mb-0.5">Ticker</span>
               <div className="flex gap-1">
                 <input
                   id="global-ticker-input"

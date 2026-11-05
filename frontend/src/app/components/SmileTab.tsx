@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
-import { calculateSmile } from '../../lib/api';
+import { calculateSmile, getAvailableExpiries } from '../../lib/api';
 
 interface SmilePoint { strike: number; iv: number; type: string; }
 interface SmileState {
@@ -18,21 +18,69 @@ interface ChartPoint { strike: number; iv: number | null; raw?: number; }
 
 export function SmileTab() {
   const market = useMarket();
-  const tickerRef = useRef<HTMLInputElement>(null);
-  const expiryRef = useRef<HTMLInputElement>(null);
+  const [ticker, setTicker] = useState(market.ticker);
+  const [expiries, setExpiries] = useState<string[]>([]);
+  const [selectedExpiry, setSelectedExpiry] = useState('');
+  const [expiriesLoading, setExpiriesLoading] = useState(false);
+  const [expiryError, setExpiryError] = useState<string | null>(null);
 
   const [state, setState] = useState<SmileState>({
     expiry_used: null, strikes_interp: [], ivs_interp: [], raw_data: [],
     current_price: null, loading: false, error: null,
   });
 
+  useEffect(() => {
+    setTicker(market.ticker);
+  }, [market.ticker]);
+
+  useEffect(() => {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    setExpiries([]);
+    setSelectedExpiry('');
+    setExpiryError(null);
+
+    if (!normalizedTicker) {
+      setExpiriesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      setExpiriesLoading(true);
+      try {
+        const res = await getAvailableExpiries(normalizedTicker);
+        if (cancelled) return;
+        if (res.error) {
+          setExpiryError(res.error);
+        } else if (res.expiries.length === 0) {
+          setExpiryError(`Aucune échéance disponible pour ${normalizedTicker}.`);
+        } else {
+          setExpiries(res.expiries);
+          setSelectedExpiry(res.expiries[0]);
+        }
+      } catch (e: unknown) {
+        if (!cancelled) setExpiryError(String(e));
+      } finally {
+        if (!cancelled) setExpiriesLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [ticker]);
+
   const handleCalculate = async () => {
-    const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
-    const expiry = expiryRef.current?.value || getDefaultMaturity();
-    setState(s => ({ ...s, loading: true, error: null }));
+    if (!selectedExpiry) return;
+    const selectedTicker = ticker.trim().toUpperCase();
+    setState(s => ({
+      ...s, loading: true, error: null, expiry_used: null,
+      strikes_interp: [], ivs_interp: [], raw_data: [], current_price: null,
+    }));
 
     try {
-      const res = await calculateSmile(ticker, expiry, market.S, market.r, market.q);
+      const res = await calculateSmile(selectedTicker, selectedExpiry, market.S, market.r, market.q);
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
         return;
@@ -73,24 +121,42 @@ export function SmileTab() {
 
       {/* Contrôles */}
       <div className="border border-[#222222]">
-        <div className="flex items-center px-2 py-0.5 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222] gap-6">
+        <div className="flex flex-wrap items-center px-2 py-1 text-[10px] bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#222222] gap-3">
           <span className="font-bold text-white"> SMILE DE VOLATILITÉ IMPLICITE</span>
-          <div className="flex gap-3 items-center">
-            <label className="text-[#888888]">Ticker :</label>
-            <input ref={tickerRef} defaultValue={market.ticker}
+          <div className="flex flex-wrap gap-3 items-center">
+            <label className="text-[#888888] flex items-center gap-1">
+              Ticker :
+              <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} disabled={state.loading}
               className="bg-[#121212] border border-[#333333] text-white py-0.5 px-1 text-[11px] w-[80px] outline-none" />
-            <label className="text-[#888888]">Maturité :</label>
-            <input ref={expiryRef} defaultValue={getDefaultMaturity()} type="date"
-              className="bg-[#121212] border border-[#333333] text-white py-0.5 px-1 text-[11px] outline-none" />
-            <button id="smile-calc-btn" onClick={handleCalculate} disabled={state.loading}
+            </label>
+            <label className="text-[#888888] flex items-center gap-1">
+              Échéance :
+              <select value={selectedExpiry} onChange={e => setSelectedExpiry(e.target.value)}
+                disabled={state.loading || expiriesLoading || expiries.length === 0}
+                className="bg-[#121212] border border-[#333333] text-white py-0.5 px-1 text-[11px] outline-none disabled:opacity-50">
+                {expiries.length === 0 && (
+                  <option value="">{expiriesLoading ? 'Chargement...' : 'Aucune échéance'}</option>
+                )}
+                {expiries.map(expiry => (
+                  <option key={expiry} value={expiry}>{formatDateFR(expiry)}</option>
+                ))}
+              </select>
+            </label>
+            <button id="smile-calc-btn" onClick={handleCalculate}
+              disabled={state.loading || expiriesLoading || !selectedExpiry}
               className="bg-[#4A90E2] text-white px-3 py-0.5 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
-              {state.loading ? 'Loading Calcul...' : 'Calculer Smile IV'}
+              {state.loading ? 'Calcul...' : 'Calculer le smile'}
             </button>
           </div>
           {state.expiry_used && (
-            <span className="text-[#FFCC00] text-[10px]">Échéance utilisée : {state.expiry_used}</span>
+            <span className="text-[#FFCC00] text-[10px]">Échéance utilisée : {formatDateFR(state.expiry_used)}</span>
           )}
         </div>
+        {expiryError && (
+          <div className="bg-[#3D0000] border-t border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px]">
+            {expiryError}
+          </div>
+        )}
       </div>
 
       {/* Graphique smile */}
@@ -106,7 +172,7 @@ export function SmileTab() {
         <div className="bg-[#0A0A0A] flex-1 p-3">
           {chartData.length === 0 ? (
             <div className="flex items-center justify-center h-full text-[#888888] text-[12px]">
-              Entrez un ticker et une maturité puis calculez le smile
+              Choisissez un ticker et une échéance puis calculez le smile
             </div>
           ) : (
             <Plot
@@ -201,8 +267,8 @@ export function SmileTab() {
   );
 }
 
-function getDefaultMaturity(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 60);
-  return d.toISOString().split('T')[0];
+function formatDateFR(dateStr: string): string {
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }

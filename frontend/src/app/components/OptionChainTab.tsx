@@ -97,7 +97,7 @@ export function OptionChainTab() {
       {/* Toolbar */}
       <div className="flex items-center justify-between px-2 py-1 bg-gradient-to-b from-[#2A2A2A] to-[#111111] border-b border-[#333333] text-[10px] shrink-0">
         <div className="flex items-center gap-3">
-          <span className="font-bold text-white"> OPTION CHAIN</span>
+          <span className="font-bold text-white"> CHAÎNE D'OPTIONS</span>
           {state.expiry_used && (
             <span className="text-[#FFCC00]">Échéance : {formatDateFR(state.expiry_used)}</span>
           )}
@@ -129,7 +129,7 @@ export function OptionChainTab() {
           )}
           <button id="chain-fetch-btn" onClick={handleFetch} disabled={state.loading}
             className="bg-[#4A90E2] text-white px-3 py-0.5 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
-            {state.loading ? 'Chargement...' : 'Charger Chaîne'}
+            {state.loading ? 'Chargement...' : 'Charger la chaîne'}
           </button>
         </div>
       </div>
@@ -144,7 +144,7 @@ export function OptionChainTab() {
       {/* État vide */}
       {state.calls.length === 0 && !state.loading && !state.error && (
         <div className="flex-1 flex items-center justify-center text-[#888888] text-[12px]">
-          Entrez un ticker et cliquez sur "Charger Chain"
+          Entrez un ticker et cliquez sur « Charger la chaîne »
         </div>
       )}
 
