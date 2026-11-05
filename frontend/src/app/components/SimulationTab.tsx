@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { useMarket } from '../App';
 import Plot from './Plot';
 import { runSimulation } from '../../lib/api';
+import { computeDaysFromDate, getDefaultMaturity } from '../../lib/dates';
 
 interface SimState {
   vols: number[];
@@ -30,7 +31,12 @@ export function SimulationTab() {
   const handleRun = useCallback(async () => {
     setState(s => ({ ...s, loading: true, error: null }));
     try {
-      const S = market.S ?? 100;
+      const quote = await market.ensureMarket(market.ticker);
+      if (!quote || quote.S === null) {
+        setState(s => ({ ...s, loading: false, error: `Données de marché indisponibles pour ${market.ticker}.` }));
+        return;
+      }
+      const S = quote.S;
       const K = parseFloat(strikeRef.current?.value || String(Math.round(S)));
       const matStr = maturityRef.current?.value || '';
       const T_days = matStr ? computeDaysFromDate(matStr) : 90;
@@ -43,7 +49,7 @@ export function SimulationTab() {
       const sStep = parseInt(sStepRef.current?.value || String(Math.round(S * 0.05)));
 
       const res = await runSimulation(
-        K, T_days, market.r, market.q,
+        K, T_days, quote.r, quote.q,
         volMin, volMax, volStep,
         sMin, sMax, sStep, optType
       );
@@ -185,17 +191,4 @@ function FR({ label, children }: { label: string; children: React.ReactNode }) {
       {children}
     </div>
   );
-}
-
-function computeDaysFromDate(dateStr: string): number {
-  const today = new Date();
-  const target = new Date(dateStr);
-  const diff = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  return Math.max(diff, 1);
-}
-
-function getDefaultMaturity(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 90);
-  return d.toISOString().split('T')[0];
 }

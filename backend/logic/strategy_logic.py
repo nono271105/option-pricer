@@ -166,7 +166,7 @@ class StrategyManager:
             strike = round(S * (1 + leg_def["offset"]), 2)
 
             # valorisation hybride de la jambe : extraction de la cotation réelle ou pricing théorique si illiquide
-            premium, T_leg = self._get_premium(
+            premium, T_leg, premium_source, expiry_used = self._get_premium(
                 ticker, S, strike, T, r, sigma, q,
                 leg_def["type"], maturity_datetime,
                 data_fetcher, option_models
@@ -179,6 +179,8 @@ class StrategyManager:
                 "position":    leg_def["pos"],
                 "strike":      strike,
                 "premium":     premium,
+                "premium_source": premium_source,
+                "expiry_used": expiry_used,
             })
 
         return legs, T_effective
@@ -186,11 +188,10 @@ class StrategyManager:
     def _get_premium(self, ticker: str, S_current: float, strike: float, T: float,
                      r: float, sigma: float, q: float,
                      option_type: str, maturity_datetime: datetime,
-                     data_fetcher, option_models) -> Tuple[float, Optional[float]]:
+                     data_fetcher, option_models) -> Tuple[float, Optional[float], str, Optional[str]]:
         """
         Récupère la prime d'un leg : prix de marché via yfinance si dispo,
-        sinon calcul BSM. Retourne (prime, T_aligné) où T_aligné est défini si la
-        cotation provient d'une échéance de chaîne proche.
+        sinon calcul BSM. Retourne aussi la source de prime et l'échéance cotée utilisée.
         """
         T_market: Optional[float] = None
         try:
@@ -199,15 +200,16 @@ class StrategyManager:
             if closest_date:
                 T_market = self._time_to_expiry_from_closest_date(closest_date)
             if market_price is not None and market_price > 0:
-                return float(market_price), T_market
+                return float(market_price), T_market, "Cotation", closest_date
         except Exception as exc:
             logger.warning("Prime marché indisponible pour %s %s K=%s, fallback BSM: %s",
                            ticker, option_type, strike, exc)
 
         # si la cotation n'est pas fiable, on simule le prix théorique exact
-        return option_models.black_scholes_price(S=S_current, K=strike, T=T,
-                              r=r, sigma=sigma, q=q,
-                              option_type=option_type), None
+        premium = option_models.black_scholes_price(
+            S=S_current, K=strike, T=T, r=r, sigma=sigma, q=q, option_type=option_type
+        )
+        return premium, None, "BSM estimé", None
 
     # =========================================================================
     # Calcul du payoff à maturité

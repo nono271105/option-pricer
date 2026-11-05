@@ -1,4 +1,4 @@
-import React, { useState, useCallback, createContext, useContext } from 'react';
+import React, { useState, useCallback, createContext, useContext, useRef } from 'react';
 import { fetchMarketData } from '../lib/api';
 import { OptionChainTab } from './components/OptionChainTab';
 import { BsmTab } from './components/BsmTab';
@@ -17,14 +17,15 @@ export interface MarketState {
   S: number | null;
   r: number;
   q: number;
-  histVol: number;
+  histVol: number | null;
   isLoading: boolean;
   warnings: string[] | null;
   error: string | null;
 }
 
 interface MarketContextValue extends MarketState {
-  fetchMarket: (ticker: string) => Promise<void>;
+  fetchMarket: (ticker: string) => Promise<MarketState | null>;
+  ensureMarket: (ticker: string) => Promise<MarketState | null>;
   setTicker: (t: string) => void;
 }
 
@@ -34,7 +35,7 @@ const DEFAULT_MARKET: MarketState = {
   S: null,
   r: 0.05,
   q: 0.0,
-  histVol: 0.20,
+  histVol: null,
   isLoading: false,
   warnings: null,
   error: null,
@@ -42,7 +43,8 @@ const DEFAULT_MARKET: MarketState = {
 
 export const MarketContext = createContext<MarketContextValue>({
   ...DEFAULT_MARKET,
-  fetchMarket: async () => {},
+  fetchMarket: async () => null,
+  ensureMarket: async () => null,
   setTicker: () => {},
 });
 
@@ -68,42 +70,56 @@ export default function App() {
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(['chains']));
   const [market, setMarket] = useState<MarketState>(DEFAULT_MARKET);
   const [tickerInput, setTickerInput] = useState('AAPL');
+  const marketRequestId = useRef(0);
 
   const handleSelectTab = (tabId: string) => {
     setActiveTab(tabId);
     setVisitedTabs(prev => new Set(prev).add(tabId));
   };
 
-  const fetchMarket = useCallback(async (ticker: string) => {
-    if (!ticker.trim()) return;
+  const fetchMarket = useCallback(async (ticker: string): Promise<MarketState | null> => {
+    if (!ticker.trim()) return null;
     const tk = ticker.trim().toUpperCase();
+    const requestId = ++marketRequestId.current;
     setMarket(m => ({ ...m, isLoading: true, error: null }));
 
     const result = await fetchMarketData(tk);
+    if (requestId !== marketRequestId.current) return null;
 
     if (result.error) {
       setMarket(m => ({ ...m, isLoading: false, error: result.error, warnings: null }));
+      return null;
     } else {
-      setMarket({
+      const nextMarket: MarketState = {
         ticker: result.ticker,
         companyName: result.company_name,
         S: result.S,
         r: result.r ?? 0.05,
         q: result.q ?? 0.0,
-        histVol: result.hist_vol ?? 0.20,
+        histVol: result.hist_vol,
         isLoading: false,
         warnings: result.warnings ?? null,
         error: null,
-      });
+      };
+      setMarket(nextMarket);
       setTickerInput(result.ticker);
+      return nextMarket;
     }
   }, []);
+
+  const ensureMarket = useCallback(async (ticker: string): Promise<MarketState | null> => {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    if (!normalizedTicker) return null;
+    if (market.ticker === normalizedTicker && market.S !== null) return market;
+    return fetchMarket(normalizedTicker);
+  }, [fetchMarket, market]);
 
   const handleFetch = () => fetchMarket(tickerInput);
 
   const ctxValue: MarketContextValue = {
     ...market,
     fetchMarket,
+    ensureMarket,
     setTicker: setTickerInput,
   };
 
@@ -180,7 +196,7 @@ export default function App() {
             <div className="flex flex-col items-end">
               <span className="text-[9px] text-[#888888] mb-0.5">SOFR (r)</span>
               <span className="text-[#D4D4D4]">
-                {(market.r * 100).toFixed(2)}%
+                {market.S !== null ? `${(market.r * 100).toFixed(2)}%` : 'N/C'}
               </span>
             </div>
 
@@ -188,7 +204,7 @@ export default function App() {
             <div className="flex flex-col items-end">
               <span className="text-[9px] text-[#888888] mb-0.5">Dividende (q)</span>
               <span className="text-[#D4D4D4]">
-                {(market.q * 100).toFixed(2)}%
+                {market.S !== null ? `${(market.q * 100).toFixed(2)}%` : 'N/C'}
               </span>
             </div>
 
@@ -196,7 +212,7 @@ export default function App() {
             <div className="flex flex-col items-end">
               <span className="text-[9px] text-[#888888] mb-0.5">Vol. Hist.</span>
               <span className="text-[#D4D4D4]">
-                {(market.histVol * 100).toFixed(2)}%
+                {market.histVol !== null ? `${(market.histVol * 100).toFixed(2)}%` : 'N/C'}
               </span>
             </div>
 

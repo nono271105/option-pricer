@@ -20,36 +20,64 @@ import type {
 } from '../types/api';
 
 const API_BASE = '/api';
+const REQUEST_TIMEOUT_MS = 15_000;
 
 async function postJson<T>(endpoint: string, body: unknown): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
-    const data = await res.json().catch(() => ({}));
+    const data: unknown = await res.json().catch(() => null);
+    if (!data || typeof data !== 'object') {
+      return {
+        error: res.ok ? 'Le serveur a renvoyé une réponse illisible.' : `Erreur HTTP ${res.status}`,
+      } as T;
+    }
     if (!res.ok) {
-      const errMsg = (data && data.error) ? data.error : `Erreur HTTP ${res.status}`;
+      const error = (data as { error?: unknown }).error;
+      const errMsg = typeof error === 'string' && error ? error : `Erreur HTTP ${res.status}`;
       return { ...data, error: errMsg } as T;
     }
     return data as T;
   } catch (err: any) {
-    return { error: err?.message || 'Erreur réseau de communication avec le serveur' } as T;
+    const message = controller.signal.aborted
+      ? 'Le serveur met trop de temps à répondre. Réessayez.'
+      : err?.message || 'Erreur réseau de communication avec le serveur';
+    return { error: message } as T;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
 async function getJson<T>(endpoint: string): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_BASE}${endpoint}`);
-    const data = await res.json().catch(() => ({}));
+    const res = await fetch(`${API_BASE}${endpoint}`, { signal: controller.signal });
+    const data: unknown = await res.json().catch(() => null);
+    if (!data || typeof data !== 'object') {
+      return {
+        error: res.ok ? 'Le serveur a renvoyé une réponse illisible.' : `Erreur HTTP ${res.status}`,
+      } as T;
+    }
     if (!res.ok) {
-      const errMsg = (data && data.error) ? data.error : `Erreur HTTP ${res.status}`;
+      const error = (data as { error?: unknown }).error;
+      const errMsg = typeof error === 'string' && error ? error : `Erreur HTTP ${res.status}`;
       return { ...data, error: errMsg } as T;
     }
     return data as T;
   } catch (err: any) {
-    return { error: err?.message || 'Erreur réseau' } as T;
+    const message = controller.signal.aborted
+      ? 'Le serveur met trop de temps à répondre. Réessayez.'
+      : err?.message || 'Erreur réseau';
+    return { error: message } as T;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -226,7 +254,8 @@ export async function priceExotic(params: PriceExoticParams): Promise<ExoticResu
 export async function getStrategyNames(): Promise<string[]> {
   const res = await getJson<string[] | { error?: string }>('/strategies');
   if (Array.isArray(res)) return res;
-  return [];
+  if (res.error) throw new Error(res.error);
+  throw new Error('Réponse invalide lors du chargement des stratégies.');
 }
 
 export async function calculateStrategy(
@@ -250,4 +279,3 @@ export async function calculateStrategy(
     hist_vol: hist_vol ?? null,
   });
 }
-

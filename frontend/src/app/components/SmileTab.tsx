@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
 import { calculateSmile, getAvailableExpiries } from '../../lib/api';
+import { formatDateFR } from '../../lib/dates';
 
 interface SmilePoint { strike: number; iv: number; type: string; }
 interface SmileState {
@@ -80,7 +81,12 @@ export function SmileTab() {
     }));
 
     try {
-      const res = await calculateSmile(selectedTicker, selectedExpiry, market.S, market.r, market.q);
+      const quote = await market.ensureMarket(selectedTicker);
+      if (!quote || quote.S === null) {
+        setState(s => ({ ...s, loading: false, error: `Données de marché indisponibles pour ${selectedTicker}.` }));
+        return;
+      }
+      const res = await calculateSmile(selectedTicker, selectedExpiry, quote.S, quote.r, quote.q);
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
         return;
@@ -265,10 +271,4 @@ export function SmileTab() {
       )}
     </div>
   );
-}
-
-function formatDateFR(dateStr: string): string {
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }

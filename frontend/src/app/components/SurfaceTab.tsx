@@ -28,7 +28,12 @@ export function SurfaceTab() {
     setState(s => ({ ...s, loading: true, warning: null, error: null }));
 
     try {
-      const res = await calculateSurface(ticker, market.S, market.r, market.q);
+      const quote = await market.ensureMarket(ticker);
+      if (!quote || quote.S === null) {
+        setState(s => ({ ...s, loading: false, error: `Données de marché indisponibles pour ${ticker}.` }));
+        return;
+      }
+      const res = await calculateSurface(ticker, quote.S, quote.r, quote.q);
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
         return;

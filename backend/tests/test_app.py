@@ -476,6 +476,30 @@ class TestStrategyManager:
         assert legs[0]["strike"] != legs[1]["strike"]
         assert legs[0]["strike"] == 8.0
         assert legs[1]["strike"] == 8.4
+        assert all(leg["premium_source"] == "BSM estimé" for leg in legs)
+        assert all(leg["expiry_used"] is None for leg in legs)
+
+    def test_build_legs_marks_market_premiums_and_expiry(self):
+        mock_data_fetcher = MagicMock()
+        mock_data_fetcher.get_implied_volatility_and_price.return_value = (
+            0.25, 2.5, "2027-01-15"
+        )
+        maturity_dt = datetime.now() + timedelta(days=30)
+        legs, _ = self.sm.build_legs(
+            strategy_name="Bull Call Spread",
+            S=100.0,
+            T=30 / 365.0,
+            r=0.05,
+            sigma=0.2,
+            q=0.0,
+            maturity_datetime=maturity_dt,
+            ticker="AAPL",
+            data_fetcher=mock_data_fetcher,
+            option_models=OptionModels(),
+        )
+
+        assert all(leg["premium_source"] == "Cotation" for leg in legs)
+        assert all(leg["expiry_used"] == "2027-01-15" for leg in legs)
 
     # ── compute_greeks (agrégation) ─────────────────────────────────────
 
@@ -705,12 +729,19 @@ class TestMarketDataDefaultsAndWarnings:
         assert data["S"] == 150.0
         assert data["r"] == 0.05
         assert data["q"] == 0.0
-        assert data["hist_vol"] == 0.20
+        assert data["hist_vol"] is None
         assert data["warnings"] is not None
         assert len(data["warnings"]) == 3
         assert any("SOFR" in w for w in data["warnings"])
         assert any("Dividende" in w for w in data["warnings"])
         assert any("Volatilité" in w for w in data["warnings"])
+
+    def test_missing_volatility_uses_labeled_default(self):
+        from services import _select_sigma
+
+        assert _select_sigma(None, None) == (0.20, "Défaut (20 %)")
+        assert _select_sigma(None, 0.31) == (0.31, "Volatilité historique")
+        assert _select_sigma(0.24, 0.31) == (0.24, "IV implicite")
 
 
 class TestDateValidationPhase2c:
@@ -801,7 +832,5 @@ class TestMonteCarloBudgetPhase2f:
         assert res.status_code == 422
         assert res.json()["code"] == "VALIDATION_MC_BUDGET_EXCEEDED"
         assert "15,000,000" in res.json()["error"]
-
-
 
 

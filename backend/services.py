@@ -84,6 +84,14 @@ def _safe(val: Any) -> Any:
     return val
 
 
+def _select_sigma(iv: Optional[float], hist_vol: Optional[float]) -> tuple[float, str]:
+    if iv is not None:
+        return float(iv), "IV implicite"
+    if hist_vol is not None:
+        return float(hist_vol), "Volatilité historique"
+    return 0.20, "Défaut (20 %)"
+
+
 def _greek_curve(
     S: float,
     K: float,
@@ -180,7 +188,7 @@ def fetch_market_data(ticker: str) -> Dict[str, Any]:
         if results["vol"] is not None:
             hist_vol = _safe(results["vol"])
         else:
-            hist_vol = 0.20
+            hist_vol = None
             warnings.append("Volatilité historique indisponible, valeur par défaut 20 %")
 
         company = company_res or ticker
@@ -300,8 +308,7 @@ def calculate_bsm(
     validate_position(position)
 
     iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K_f, mat_dt, option_type)
-    sigma = iv if iv is not None else (hist_vol if hist_vol is not None else 0.20)
-    sigma_source = "IV" if iv is not None else "Historique"
+    sigma, sigma_source = _select_sigma(iv, hist_vol)
 
     price = _option_models.black_scholes_price(S_f, K_f, T, r_f, sigma, q_f, option_type)
     price = round(float(price), 4)
@@ -363,8 +370,7 @@ def calculate_crr(
     validate_N_crr(N_i)
 
     iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K_f, mat_dt, option_type)
-    sigma_used = iv if iv is not None else (hist_vol if hist_vol is not None else 0.20)
-    sigma_source = "IV" if iv is not None else "Historique"
+    sigma_used, sigma_source = _select_sigma(iv, hist_vol)
 
     price = _crr_models.cox_ross_rubinstein_price(
         S=S_f, K=K_f, T=T, r=r_f, sigma=sigma_used, q=q_f, N=N_i, option_type=option_type
@@ -601,8 +607,7 @@ def price_exotic(
         validate_averaging(averaging)
 
     iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K_f, mat_dt, option_type)
-    sigma = iv if iv is not None else (hist_vol if hist_vol is not None else 0.20)
-    sigma_source = "IV" if iv is not None else "Historique"
+    sigma, sigma_source = _select_sigma(iv, hist_vol)
 
     results: Dict[str, Any] = {}
 
@@ -725,8 +730,7 @@ def calculate_strategy(
     maturity_dt = validate_date_str(expiry_str, field_name="expiry_str")
 
     iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, S_f, maturity_dt, "call")
-    sigma_used = iv if iv is not None else (hist_vol if hist_vol is not None else 0.20)
-    sigma_source = "IV" if iv is not None else "Historique"
+    sigma_used, sigma_source = _select_sigma(iv, hist_vol)
 
     legs, T_eff = _strategy_mgr.build_legs(
         strategy_name, S_f, T_f, r_f, sigma_used, q_f, maturity_dt, ticker,
@@ -770,4 +774,3 @@ def calculate_strategy(
         "greeks": greeks,
         "error": None,
     }
-

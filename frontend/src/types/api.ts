@@ -151,6 +151,8 @@ export interface Leg {
   position: string;
   strike: number;
   premium: number;
+  premium_source: string;
+  expiry_used: string | null;
 }
 
 export interface StrategyMetrics {

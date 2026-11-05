@@ -2,15 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
 import { getStrategyNames, calculateStrategy } from '../../lib/api';
+import type { Leg } from '../../types/api';
+import { computeDaysFromDate, formatDateFR, getDefaultMaturity } from '../../lib/dates';
 
 // ── Types ────────────────────────────────────────────────────────────────
-
-interface Leg {
-  option_type: string;
-  position: string;
-  strike: number;
-  premium: number;
-}
 
 interface PayoffPoint { spot: number; payoff: number; }
 interface ValuePoint  { spot: number; value: number; }
@@ -84,18 +79,29 @@ export function StrategiesTab() {
   });
 
   useEffect(() => {
+    let active = true;
     getStrategyNames().then((names: string[]) => {
-      if (names && names.length > 0 && !names.includes(strategy)) {
+      if (active && names.length > 0 && !names.includes(strategy)) {
         setStrategy(names[0]);
       }
-    }).catch(() => { /* silencieux */ });
+    }).catch((error: unknown) => {
+      if (active) {
+        setState(s => ({ ...s, error: `Impossible de charger les stratégies : ${String(error)}` }));
+      }
+    });
+    return () => { active = false; };
   }, []);
 
   const handleAnalyze = async () => {
     setState(s => ({ ...s, loading: true, error: null }));
     try {
       const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
-      const S = market.S ?? 100;
+      const quote = await market.ensureMarket(ticker);
+      if (!quote || quote.S === null) {
+        setState(s => ({ ...s, loading: false, error: `Données de marché indisponibles pour ${ticker}.` }));
+        return;
+      }
+      const S = quote.S;
       const matStr = maturityRef.current?.value || '';
       const T_days = matStr ? computeDaysFromDate(matStr) : 90;
       const expiry = matStr || getDefaultMaturity();
@@ -105,10 +111,10 @@ export function StrategiesTab() {
         ticker,
         S,
         T_days,
-        market.r,
-        market.q,
+        quote.r,
+        quote.q,
         expiry,
-        market.histVol
+        quote.histVol
       );
 
       if (res.error) {
@@ -201,6 +207,7 @@ export function StrategiesTab() {
                   <th className="py-1 px-2 font-normal">Instrument</th>
                   <th className="py-1 px-2 font-normal">Strike</th>
                   <th className="py-1 px-2 font-normal">Prime</th>
+                  <th className="py-1 px-2 font-normal">Origine / échéance</th>
                   <th className="py-1 px-2 font-normal">Flux</th>
                 </tr>
               </thead>
@@ -218,6 +225,10 @@ export function StrategiesTab() {
                       <td className="py-1 px-2 text-[#D4D4D4]">{leg.option_type.toUpperCase()}</td>
                       <td className="py-1 px-2 text-[#FFFFFF] font-bold">{leg.strike.toFixed(2)}</td>
                       <td className="py-1 px-2 text-[#888888]">{leg.premium.toFixed(4)} $</td>
+                      <td className="py-1 px-2 text-[#888888]">
+                        {leg.premium_source}
+                        {leg.expiry_used && ` · ${formatDateFR(leg.expiry_used)}`}
+                      </td>
                       <td className={`py-1 px-2 font-bold ${flux < 0 ? 'text-[#FF6B6B]' : 'text-[#6BCB77]'}`}>
                         {flux >= 0 ? '+' : ''}{flux.toFixed(4)} $
                       </td>
@@ -226,7 +237,7 @@ export function StrategiesTab() {
                 })}
                 {/* Ligne coût net */}
                 <tr className="bg-[#0D0D0D] divide-x divide-[#1E1E1E]">
-                  <td colSpan={4} className="py-1 px-2 text-left text-[9px] text-[#666666] uppercase tracking-wider">Coût net total</td>
+                  <td colSpan={5} className="py-1 px-2 text-left text-[9px] text-[#666666] uppercase tracking-wider">Coût net total</td>
                   <td className={`py-1 px-2 font-bold text-[12px] ${costColor(state.metrics.cost)}`}>
                     {state.metrics.cost !== null
                       ? `${state.metrics.cost >= 0 ? '+' : ''}${state.metrics.cost.toFixed(4)} $`
@@ -421,16 +432,4 @@ function MetricRow({ label, value, valueClass }: { label: string; value: string;
       <span className={`text-[11px] font-bold ${valueClass || 'text-[#D4D4D4]'}`}>{value}</span>
     </div>
   );
-}
-
-function computeDaysFromDate(dateStr: string): number {
-  const today = new Date();
-  const target = new Date(dateStr);
-  return Math.max(Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)), 1);
-}
-
-function getDefaultMaturity(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 90);
-  return d.toISOString().split('T')[0];
 }

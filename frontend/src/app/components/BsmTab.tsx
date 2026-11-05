@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
 import { calculateBsm } from '../../lib/api';
+import { getDefaultMaturity } from '../../lib/dates';
 import type { Greeks, PricePoint, GreekPoint } from '../../types/api';
 
 type GreekKey = 'delta' | 'gamma' | 'theta' | 'vega' | 'rho';
@@ -60,14 +61,19 @@ export function BsmTab() {
     setState(s => ({ ...s, loading: true, error: null }));
     try {
       const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
-      const S = market.S ?? 100;
+      const quote = await market.ensureMarket(ticker);
+      if (!quote || quote.S === null) {
+        setState(s => ({ ...s, loading: false, error: `Données de marché indisponibles pour ${ticker}.` }));
+        return;
+      }
+      const S = quote.S;
       const K = parseFloat(strikeRef.current?.value || String(Math.round(S)));
       const matStr = maturityRef.current?.value || '';
       const optType = optTypeRef.current?.value || 'call';
       const position = positionRef.current?.value || 'long';
 
       const res = await calculateBsm(
-        ticker, S, K, matStr, market.r, market.q, optType, position, market.histVol
+        ticker, S, K, matStr, quote.r, quote.q, optType, position, quote.histVol
       );
 
       if (res.error) {
@@ -126,7 +132,6 @@ export function BsmTab() {
 
   // Valeur par défaut du strike (ATM arrondi)
   const defaultStrike = market.S ? Math.round(market.S) : 290;
-  const defaultSigma = market.histVol ? (market.histVol * 100).toFixed(2) : '20.00';
   const defaultMaturity = getDefaultMaturity();
 
   return (
@@ -202,8 +207,8 @@ export function BsmTab() {
             </div>
             <div className="bg-[#000000] p-1.5 grid grid-cols-2 gap-x-4 gap-y-1.5">
               <DataRow label="Prix Actuel (S)" value={market.S ? `${market.S.toFixed(2)} $` : 'N/C'} />
-              <DataRow label="Taux SOFR (r)"   value={`${(market.r * 100).toFixed(2)}%`} />
-              <DataRow label="Dividende (q)"   value={`${(market.q * 100).toFixed(2)}%`} />
+              <DataRow label="Taux SOFR (r)"   value={market.S !== null ? `${(market.r * 100).toFixed(2)}%` : 'N/C'} />
+              <DataRow label="Dividende (q)"   value={market.S !== null ? `${(market.q * 100).toFixed(2)}%` : 'N/C'} />
               <DataRow label={`Volatilité (σ) [${state.sigma_source || 'N/A'}]`} value={state.sigma ? `${(state.sigma * 100).toFixed(2)}%` : 'N/A'} />
               <DataRow label="Prix de l'option"
                 value={state.price !== null ? `${state.price.toFixed(4)} $` : 'N/C'}
@@ -378,19 +383,6 @@ export function BsmTab() {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function computeDaysFromDate(dateStr: string): number {
-  const today = new Date();
-  const target = new Date(dateStr);
-  const diff = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  return Math.max(diff, 1);
-}
-
-function getDefaultMaturity(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 90);
-  return d.toISOString().split('T')[0];
-}
 
 function FormRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (

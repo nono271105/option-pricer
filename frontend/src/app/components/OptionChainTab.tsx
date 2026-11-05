@@ -1,57 +1,99 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMarket } from '../App';
 import { getAvailableExpiries, getOptionChain } from '../../lib/api';
 import type { OptionRow } from '../../types/api';
+import { formatDateFR } from '../../lib/dates';
 
 interface ChainState {
   expiry_used: string | null;
   calls: OptionRow[];
   puts: OptionRow[];
   expiries: string[];
+  expiriesLoading: boolean;
+  expiryError: string | null;
   loading: boolean;
   error: string | null;
 }
 
-// Formate une date YYYY-MM-DD en DD/MM/YYYY
-function formatDateFR(dateStr: string): string {
-  if (!dateStr) return dateStr;
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
-
 export function OptionChainTab() {
   const market = useMarket();
-  const tickerRef = useRef<HTMLInputElement>(null);
+  const [ticker, setTicker] = useState(market.ticker);
   const [selectedExpiry, setSelectedExpiry] = useState<string>('');
   const [selectedStrike, setSelectedStrike] = useState<number | null>(null);
 
   const [state, setState] = useState<ChainState>({
     expiry_used: null, calls: [], puts: [],
-    expiries: [], loading: false, error: null,
+    expiries: [], expiriesLoading: false, expiryError: null,
+    loading: false, error: null,
   });
 
-  // Charge les expiries disponibles
-  const fetchExpiries = async (ticker: string) => {
-    try {
-      const res = await getAvailableExpiries(ticker);
-      if (!res.error && res.expiries.length > 0) {
-        setState(s => ({ ...s, expiries: res.expiries }));
-        setSelectedExpiry(res.expiries[0]);
+  useEffect(() => {
+    setTicker(market.ticker);
+  }, [market.ticker]);
+
+  useEffect(() => {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    setSelectedExpiry('');
+    setSelectedStrike(null);
+    setState(s => ({
+      ...s, expiry_used: null, calls: [], puts: [], expiries: [],
+      expiriesLoading: Boolean(normalizedTicker), expiryError: null,
+      loading: false, error: null,
+    }));
+
+    if (!normalizedTicker) return;
+
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await getAvailableExpiries(normalizedTicker);
+        if (cancelled) return;
+        if (res.error) {
+          setState(s => ({ ...s, expiryError: res.error, expiries: [] }));
+        } else if (res.expiries.length === 0) {
+          setState(s => ({
+            ...s, expiryError: `Aucune échéance d'options disponible pour ${normalizedTicker}.`,
+            expiries: [],
+          }));
+        } else {
+          setState(s => ({ ...s, expiryError: null, expiries: res.expiries }));
+          setSelectedExpiry(res.expiries[0]);
+        }
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setState(s => ({ ...s, expiryError: String(e), expiries: [] }));
+        }
+      } finally {
+        if (!cancelled) setState(s => ({ ...s, expiriesLoading: false }));
       }
-    } catch { /* silencieux */ }
-  };
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [ticker]);
 
   const handleFetch = async () => {
-    const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
-    const expiry = selectedExpiry || getDefaultExpiry();
+    const selectedTicker = ticker.trim().toUpperCase();
+    if (!selectedExpiry) {
+      setState(s => ({
+        ...s,
+        error: s.expiryError || 'Sélectionnez une échéance disponible avant de charger la chaîne.',
+      }));
+      return;
+    }
+    const expiry = selectedExpiry;
     setState(s => ({ ...s, loading: true, error: null }));
 
     try {
-      // Récupérer marché si pas déjà fait
-      if (!market.S) await market.fetchMarket(ticker);
+      const quote = await market.ensureMarket(selectedTicker);
+      if (!quote || quote.S === null) {
+        setState(s => ({ ...s, loading: false, error: `Données de marché indisponibles pour ${selectedTicker}.` }));
+        return;
+      }
 
-      const res = await getOptionChain(ticker, expiry, market.S, market.r, market.q);
+      const res = await getOptionChain(selectedTicker, expiry, quote.S, quote.r, quote.q);
       if (res.error) {
         setState(s => ({ ...s, loading: false, error: res.error }));
         return;
@@ -64,7 +106,7 @@ export function OptionChainTab() {
       }));
       if (res.calls.length > 0) {
         // Sélectionner le strike ATM
-        const S = market.S ?? 0;
+        const S = quote.S;
         const atm = res.calls.reduce((prev: OptionRow, curr: OptionRow) =>
           Math.abs(curr.strike - S) < Math.abs(prev.strike - S) ? curr : prev
         );
@@ -75,13 +117,6 @@ export function OptionChainTab() {
     }
   };
 
-  // Charge les expiries au montage
-  useEffect(() => {
-    if (market.ticker) {
-      fetchExpiries(market.ticker);
-    }
-  }, [market.ticker]);
-
   // Combine calls et puts par strike
   const allStrikes = [...new Set([
     ...state.calls.map(c => c.strike),
@@ -90,7 +125,7 @@ export function OptionChainTab() {
 
   const callMap = new Map(state.calls.map(c => [c.strike, c]));
   const putMap = new Map(state.puts.map(p => [p.strike, p]));
-  const spotPrice = market.S;
+  const spotPrice = ticker.trim().toUpperCase() === market.ticker ? market.S : null;
 
   return (
     <div className="flex flex-col h-full bg-[#000000]">
@@ -106,33 +141,36 @@ export function OptionChainTab() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <input ref={tickerRef} defaultValue={market.ticker}
+          <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())}
             className="bg-[#FFF4C2] text-black px-1.5 py-0.5 font-bold w-[80px] text-[11px] outline-none rounded-sm"
             placeholder="AAPL" />
-          {state.expiries.length > 0 ? (
-            <select
-              value={selectedExpiry}
-              onChange={e => setSelectedExpiry(e.target.value)}
-              className="bg-[#121212] border border-[#333333] text-white px-1.5 py-0.5 text-[10px] outline-none appearance-none"
-            >
-              {state.expiries.map(e => (
-                <option key={e} value={e}>{formatDateFR(e)}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              value={selectedExpiry}
-              onChange={e => setSelectedExpiry(e.target.value)}
-              placeholder={getDefaultExpiry()}
-              className="bg-[#121212] border border-[#333333] text-white px-1.5 py-0.5 text-[10px] outline-none w-[110px]"
-            />
-          )}
-          <button id="chain-fetch-btn" onClick={handleFetch} disabled={state.loading}
+          <select
+            value={selectedExpiry}
+            onChange={e => setSelectedExpiry(e.target.value)}
+            disabled={state.expiriesLoading || state.expiries.length === 0}
+            className="bg-[#121212] border border-[#333333] text-white px-1.5 py-0.5 text-[10px] outline-none appearance-none disabled:opacity-50"
+          >
+            {state.expiries.length === 0 ? (
+              <option value="">
+                {state.expiriesLoading ? 'Chargement des échéances...' : 'Aucune échéance'}
+              </option>
+            ) : state.expiries.map(e => (
+              <option key={e} value={e}>{formatDateFR(e)}</option>
+            ))}
+          </select>
+          <button id="chain-fetch-btn" onClick={handleFetch}
+            disabled={state.loading || state.expiriesLoading || !selectedExpiry}
             className="bg-[#4A90E2] text-white px-3 py-0.5 hover:bg-[#357ABD] text-[10px] font-bold rounded-sm disabled:opacity-50">
             {state.loading ? 'Chargement...' : 'Charger la chaîne'}
           </button>
         </div>
       </div>
+
+      {state.expiryError && (
+        <div className="bg-[#3D0000] border border-[#FF4444] text-[#FF9999] px-3 py-1.5 text-[11px] mx-2 mt-1 rounded shrink-0">
+          {state.expiryError}
+        </div>
+      )}
 
       {/* Erreur */}
       {state.error && (
@@ -142,9 +180,13 @@ export function OptionChainTab() {
       )}
 
       {/* État vide */}
-      {state.calls.length === 0 && !state.loading && !state.error && (
+      {state.calls.length === 0 && !state.loading && !state.error && !state.expiryError && (
         <div className="flex-1 flex items-center justify-center text-[#888888] text-[12px]">
-          Entrez un ticker et cliquez sur « Charger la chaîne »
+          {state.expiriesLoading
+            ? 'Chargement des échéances disponibles...'
+            : state.expiry_used
+            ? `Aucune cotation d'option disponible pour l'échéance du ${formatDateFR(state.expiry_used)}.`
+            : 'Choisissez un ticker et une échéance puis cliquez sur « Charger la chaîne »'}
         </div>
       )}
 
@@ -238,10 +280,4 @@ export function OptionChainTab() {
       )}
     </div>
   );
-}
-
-function getDefaultExpiry(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 60);
-  return d.toISOString().split('T')[0];
 }

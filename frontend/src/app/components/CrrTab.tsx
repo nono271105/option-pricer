@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import Plot from './Plot';
 import { useMarket } from '../App';
 import { calculateCrr } from '../../lib/api';
+import { getDefaultMaturity } from '../../lib/dates';
 import type { Greeks, PricePoint, GreekPoint } from '../../types/api';
 
 type GreekKey = 'delta' | 'gamma' | 'theta' | 'vega' | 'rho';
@@ -53,7 +54,12 @@ export function CrrTab() {
     setState(s => ({ ...s, loading: true, error: null }));
     try {
       const ticker = tickerRef.current?.value.trim().toUpperCase() || market.ticker;
-      const S = market.S ?? 100;
+      const quote = await market.ensureMarket(ticker);
+      if (!quote || quote.S === null) {
+        setState(s => ({ ...s, loading: false, error: `Données de marché indisponibles pour ${ticker}.` }));
+        return;
+      }
+      const S = quote.S;
       const K = parseFloat(strikeRef.current?.value || String(Math.round(S)));
       const matStr = maturityRef.current?.value || '';
       const N = parseInt(stepsRef.current?.value || '200');
@@ -61,7 +67,7 @@ export function CrrTab() {
       const position = positionRef.current?.value || 'long';
 
       const res = await calculateCrr(
-        ticker, S, K, matStr, market.r, market.q, N, optType, position, market.histVol
+        ticker, S, K, matStr, quote.r, quote.q, N, optType, position, quote.histVol
       );
 
       if (res.error) {
@@ -165,8 +171,8 @@ export function CrrTab() {
             </div>
             <div className="bg-[#000000] p-1.5 grid grid-cols-2 gap-x-4 gap-y-1.5">
               <DR label="Prix Actuel (S)" value={market.S ? `${market.S.toFixed(2)} $` : 'N/C'} />
-              <DR label="Taux SOFR (r)"   value={`${(market.r * 100).toFixed(2)}%`} />
-              <DR label="Dividende (q)"   value={`${(market.q * 100).toFixed(2)}%`} />
+              <DR label="Taux SOFR (r)"   value={market.S !== null ? `${(market.r * 100).toFixed(2)}%` : 'N/C'} />
+              <DR label="Dividende (q)"   value={market.S !== null ? `${(market.q * 100).toFixed(2)}%` : 'N/C'} />
               <DR label={`Volatilité (σ) [${state.sigma_source || 'N/A'}]`} value={state.sigma ? `${(state.sigma * 100).toFixed(2)}%` : 'N/A'} />
               <DR label="Prix CRR (Américain)"
                 value={state.price !== null ? `${state.price.toFixed(4)} $` : 'N/C'}
@@ -336,16 +342,4 @@ function DR({ label, value, highlight = false }: { label: string; value: string;
       <span className={`text-[11px] font-bold ${highlight ? 'text-[#4A90E2]' : 'text-[#FFFFFF]'}`}>{value}</span>
     </div>
   );
-}
-
-function computeDaysFromDate(dateStr: string): number {
-  const today = new Date();
-  const target = new Date(dateStr);
-  return Math.max(Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)), 1);
-}
-
-function getDefaultMaturity(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 90);
-  return d.toISOString().split('T')[0];
 }

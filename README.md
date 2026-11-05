@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/status-Active-brightgreen.svg" alt="Active">
   <br>
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white" alt="React 18">
-  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white" alt="Vite">
   <img src="https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Vercel-Deployed-000000?logo=vercel&logoColor=white" alt="Vercel">
@@ -174,7 +174,7 @@ FRED_API_KEY=votre_cle_fred_ici
 # 1. Installer l'environnement Python
 python3 -m venv venv
 source venv/bin/activate       # Sur Windows : venv\Scripts\activate
-pip install -r backend/requirements-dev.txt
+pip install -r requirements-dev.txt
 
 # 2. Installer les dépendances frontend
 cd frontend
@@ -262,18 +262,24 @@ option-pricer/
 
 ## Tests
 
-Exécution de la suite complète de 105 tests de régression :
+Exécution des tests de régression (les tests marqués `integration` sont exclus par défaut) :
 
 ```bash
-pytest backend/
+python -m pytest -q
+```
+
+Les tests nécessitant un accès réseau peuvent être lancés séparément :
+
+```bash
+python -m pytest -m integration -q
 ```
 
 Vérification du typage TypeScript et build frontend :
 
 ```bash
-cd frontend
-npx tsc --noEmit
-npm run build
+npm --prefix frontend ci
+npm --prefix frontend run typecheck
+npm --prefix frontend run build
 ```
 
 ---
