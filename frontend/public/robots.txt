@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://option-pricer-alpha.vercel.app/sitemap.xml
