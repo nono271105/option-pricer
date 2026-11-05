@@ -97,7 +97,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     logger.exception("Erreur interne non gérée : %s", exc)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"error": f"Erreur serveur interne: {exc}"},
+        content={"error": "Erreur serveur interne."},
     )
 
 

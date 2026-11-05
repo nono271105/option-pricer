@@ -6,10 +6,26 @@ Permet de valider séparément l'accessibilité réseau et la latence depuis l'e
 from __future__ import annotations
 
 import os
+import logging
 import time
 from typing import Any, Dict
 import requests
 import yfinance as yf
+
+logger = logging.getLogger(__name__)
+
+
+def _source_error(source: str, started_at: float, exc: Exception) -> Dict[str, Any]:
+    logger.warning(
+        "Échec du contrôle de santé %s (%s)",
+        source,
+        type(exc).__name__,
+    )
+    return {
+        "ok": False,
+        "latency_ms": round((time.perf_counter() - started_at) * 1000, 1),
+        "error": f"Erreur lors de la vérification de {source}",
+    }
 
 
 def check_health(ticker_symbol: str = "AAPL") -> Dict[str, Any]:
@@ -28,11 +44,7 @@ def check_health(ticker_symbol: str = "AAPL") -> Dict[str, Any]:
             "error": None if ok else "Historique 1j vide",
         }
     except Exception as e:
-        sources["yfinance_history"] = {
-            "ok": False,
-            "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
-            "error": str(e),
-        }
+        sources["yfinance_history"] = _source_error("yfinance_history", t0, e)
 
     # 2. yfinance : .info
     t0 = time.perf_counter()
@@ -45,11 +57,7 @@ def check_health(ticker_symbol: str = "AAPL") -> Dict[str, Any]:
             "error": None if ok else "Info vide ou introuvable",
         }
     except Exception as e:
-        sources["yfinance_info"] = {
-            "ok": False,
-            "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
-            "error": str(e),
-        }
+        sources["yfinance_info"] = _source_error("yfinance_info", t0, e)
 
     # 3. yfinance : liste des échéances
     expiries = []
@@ -63,11 +71,7 @@ def check_health(ticker_symbol: str = "AAPL") -> Dict[str, Any]:
             "error": None if ok else "Aucune échéance disponible",
         }
     except Exception as e:
-        sources["yfinance_expiries"] = {
-            "ok": False,
-            "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
-            "error": str(e),
-        }
+        sources["yfinance_expiries"] = _source_error("yfinance_expiries", t0, e)
 
     # 4. yfinance : une chaîne d'options
     t0 = time.perf_counter()
@@ -87,11 +91,7 @@ def check_health(ticker_symbol: str = "AAPL") -> Dict[str, Any]:
                 "error": "Aucune échéance disponible pour tester la chaîne",
             }
     except Exception as e:
-        sources["yfinance_chain"] = {
-            "ok": False,
-            "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
-            "error": str(e),
-        }
+        sources["yfinance_chain"] = _source_error("yfinance_chain", t0, e)
 
     # 5. FRED : dernière valeur SOFR
     t0 = time.perf_counter()
@@ -132,11 +132,7 @@ def check_health(ticker_symbol: str = "AAPL") -> Dict[str, Any]:
                 "error": None if ok else "Aucune observation SOFR valide",
             }
     except Exception as e:
-        sources["fred_sofr"] = {
-            "ok": False,
-            "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
-            "error": str(e),
-        }
+        sources["fred_sofr"] = _source_error("fred_sofr", t0, e)
 
     all_ok = all(s["ok"] for s in sources.values())
     status = "healthy" if all_ok else ("degraded" if any(s["ok"] for s in sources.values()) else "unhealthy")

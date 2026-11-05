@@ -1094,6 +1094,54 @@ class TestMarketDataDefaultsAndWarnings:
         assert any("Dividende" in w for w in data["warnings"])
         assert any("Volatilité" in w for w in data["warnings"])
 
+
+class TestExceptionInformationExposure:
+    def test_unhandled_exception_response_does_not_expose_exception_text(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        import services
+
+        secret_detail = "internal-path-and-secret-token"
+        with patch.object(
+            services, "get_strategy_names",
+            side_effect=RuntimeError(secret_detail),
+        ):
+            response = TestClient(app, raise_server_exceptions=False).get(
+                "/api/strategies"
+            )
+
+        assert response.status_code == 500
+        assert response.json() == {"error": "Erreur serveur interne."}
+        assert secret_detail not in response.text
+
+    @patch.dict(os.environ, {"FRED_API_KEY": "sentinel-api-key"})
+    @patch("health.yf.Ticker")
+    @patch("health.requests.get")
+    def test_health_response_does_not_expose_upstream_error_or_api_key(
+        self, mock_get, mock_ticker_class
+    ):
+        from fastapi.testclient import TestClient
+        from main import app
+
+        ticker = MagicMock()
+        ticker.history.return_value = pd.DataFrame({"Close": [100.0]})
+        ticker.info = {"shortName": "Apple"}
+        ticker.options = []
+        mock_ticker_class.return_value = ticker
+        mock_get.side_effect = requests.HTTPError(
+            "403 Forbidden: api_key=sentinel-api-key"
+        )
+
+        response = TestClient(app).get("/api/health")
+
+        assert response.status_code == 200
+        assert "sentinel-api-key" not in response.text
+        assert "403 Forbidden" not in response.text
+        assert response.json()["sources"]["fred_sofr"]["error"] == (
+            "Erreur lors de la vérification de fred_sofr"
+        )
+
+
 class TestDateValidationPhase2c:
     """Tests Phase 2c : validation stricte des dates sans repli silencieux."""
 
