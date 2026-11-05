@@ -290,10 +290,15 @@ class TestDataFetcher:
         assert price is None
         assert expiry == "2026-12-18"
 
-        iv2, price2, expiry2 = self.fetcher.get_implied_volatility_and_price("AAPL", 148, dt, "call")
+        iv2, price2, expiry2 = self.fetcher.get_implied_volatility_and_price("AAPL", 150, dt, "call")
         assert iv2 is not None
         assert price2 is not None
         assert expiry2 == "2026-12-18"
+
+        iv3, price3, expiry3 = self.fetcher.get_implied_volatility_and_price("AAPL", 148, dt, "call")
+        assert iv3 is None
+        assert price3 is None
+        assert expiry3 == "2026-12-18"
 
     @patch("data_fetcher.requests.get")
     def test_sofr_skips_non_numeric_observation(self, mock_get):
@@ -705,6 +710,8 @@ class TestVolatilitySmileLogic:
                 "ask": [p * 1.05 for p in prices],
                 "lastPrice": prices,
                 "impliedVolatility": [sigma] * len(strikes),
+                "volume": [20] * len(strikes),
+                "openInterest": [100] * len(strikes),
             })
 
         chain = MagicMock()
@@ -747,7 +754,9 @@ class TestCustomStrategyPricing:
 
     def _run(self, legs, expiries, chains, hist_vol=0.2):
         import services
+        from cache import global_cache_iv
 
+        global_cache_iv.clear()
         with (
             patch.object(services._data_fetcher, "get_available_expiries", return_value=expiries),
             patch.object(
@@ -779,7 +788,7 @@ class TestCustomStrategyPricing:
         assert result["metrics"]["max_gain"] is None
         assert result["metrics"]["max_loss"] is None
         assert [leg["expiry"] for leg in result["legs"]] == [expiry_1, expiry_2]
-        assert all(leg["premium_source"] == "Cotation" for leg in result["legs"])
+        assert all(leg["premium_source"] == "Cotation bid/ask" for leg in result["legs"])
         assert result["legs"][0]["expiry_used"] == expiry_1
         assert result["legs"][1]["expiry_used"] == expiry_2
         assert len(result["value_today_data"]) == 300
@@ -900,7 +909,12 @@ class TestApiExotics:
 
         client = TestClient(app)
 
-        with patch.object(services._data_fetcher, "get_implied_volatility_and_price", return_value=(0.20, None, None)):
+        from logic.volatility_resolver import VolatilityEstimate
+        with patch.object(
+            services._volatility_resolver,
+            "resolve",
+            return_value=VolatilityEstimate(0.20, "IV recalculée (bid/ask)"),
+        ):
             maturity = (date.today() + timedelta(days=400)).isoformat()
 
             # Sans rebate (rebate=0 par défaut)
@@ -954,6 +968,96 @@ class TestApiExotics:
             assert data16["results"]["mc"]["price"] > data15["results"]["mc"]["price"]
 
 
+class TestServiceVolatilityResolution:
+    def test_bsm_uses_resolved_implied_volatility_for_price_and_greeks(self):
+        import services
+        from logic.volatility_resolver import VolatilityEstimate
+
+        maturity = (date.today() + timedelta(days=60)).isoformat()
+        with patch.object(
+            services._volatility_resolver,
+            "resolve",
+            return_value=VolatilityEstimate(0.32, "IV interpolée (même échéance)"),
+        ) as resolve:
+            result = services.calculate_bsm(
+                ticker="AAPL", S=100, K=105, maturity_date=maturity,
+                r=0.04, q=0.01, option_type="call", hist_vol=0.18,
+            )
+
+        assert result["sigma"] == 0.32
+        assert result["sigma_source"] == "IV interpolée (même échéance)"
+        assert resolve.call_args.kwargs["K"] == 105
+        expected = OptionModels().black_scholes_price(
+            100, 105, 60 / 365, 0.04, 0.32, 0.01, "call"
+        )
+        assert result["price"] == pytest.approx(expected, abs=1e-4)
+
+    def test_option_chain_greeks_use_the_same_resolved_iv_as_display(self):
+        import services
+        from logic.volatility_resolver import VolatilityEstimate
+
+        expiry = (date.today() + timedelta(days=30)).isoformat()
+        T = 30 / 365
+        market_price = OptionModels().black_scholes_price(
+            100, 100, T, 0.04, 0.30, 0.01, "call"
+        )
+        option_chain = MagicMock()
+        option_chain.calls = pd.DataFrame([{
+            "strike": 100.0,
+            "bid": market_price - 0.01,
+            "ask": market_price + 0.01,
+            "impliedVolatility": 0.20,
+            "volume": 5,
+            "openInterest": 100,
+        }])
+        option_chain.puts = pd.DataFrame()
+        with (
+            patch.object(services._data_fetcher, "get_available_expiries", return_value=[expiry]),
+            patch.object(services._data_fetcher, "get_option_chain_for_expiry", return_value=option_chain),
+            patch.object(services._data_fetcher, "get_historical_volatility", return_value=0.18),
+        ):
+            result = services.get_option_chain("AAPL", expiry, 100, 0.04, 0.01)
+
+        call = result["calls"][0]
+        assert call["iv"] == pytest.approx(30.0, abs=0.2)
+        assert call["iv_source"] == "IV recalculée (bid/ask)"
+        expected_delta = OptionModels().calculate_greeks(
+            100, 100, T, 0.04, 0.30, 0.01, "call"
+        )["delta"]
+        assert call["delta"] == pytest.approx(expected_delta, abs=1e-4)
+
+    def test_predefined_strategy_resolves_volatility_and_greeks_per_leg(self):
+        import services
+        from logic.volatility_resolver import VolatilityEstimate
+
+        expiry = (date.today() + timedelta(days=30)).isoformat()
+        estimates = [
+            VolatilityEstimate(0.20, "IV recalculée (bid/ask)"),
+            VolatilityEstimate(0.40, "IV recalculée (bid/ask)"),
+        ]
+        with patch.object(
+            services._volatility_resolver, "resolve", side_effect=estimates
+        ) as resolve:
+            result = services.calculate_strategy(
+                strategy_name="Bull Call Spread", ticker="AAPL", S=100,
+                T_days=30, r=0.04, q=0.01, expiry_str=expiry, hist_vol=0.18,
+            )
+
+        assert [leg["sigma"] for leg in result["legs"]] == [0.20, 0.40]
+        assert [leg["sigma_source"] for leg in result["legs"]] == [
+            "IV recalculée (bid/ask)",
+            "IV recalculée (bid/ask)",
+        ]
+        assert [call.kwargs["K"] for call in resolve.call_args_list] == [100, 105]
+        T = 30 / 365
+        greeks = OptionModels()
+        expected_delta = (
+            greeks.calculate_greeks(100, 100, T, 0.04, 0.20, 0.01, "call")["delta"]
+            - greeks.calculate_greeks(100, 105, T, 0.04, 0.40, 0.01, "call")["delta"]
+        )
+        assert result["greeks"]["delta"] == pytest.approx(expected_delta, abs=1e-6)
+
+
 class TestMarketDataDefaultsAndWarnings:
     """Tests Phase 2b : gestion explicite des erreurs et avertissements market-data."""
 
@@ -989,14 +1093,6 @@ class TestMarketDataDefaultsAndWarnings:
         assert any("SOFR" in w for w in data["warnings"])
         assert any("Dividende" in w for w in data["warnings"])
         assert any("Volatilité" in w for w in data["warnings"])
-
-    def test_missing_volatility_uses_labeled_default(self):
-        from services import _select_sigma
-
-        assert _select_sigma(None, None) == (0.20, "Défaut (20 %)")
-        assert _select_sigma(None, 0.31) == (0.31, "Volatilité historique")
-        assert _select_sigma(0.24, 0.31) == (0.24, "IV implicite")
-
 
 class TestDateValidationPhase2c:
     """Tests Phase 2c : validation stricte des dates sans repli silencieux."""

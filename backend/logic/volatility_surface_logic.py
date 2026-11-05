@@ -8,10 +8,13 @@ import pandas as pd
 from typing import Optional, Tuple, Dict
 from datetime import datetime
 from scipy.interpolate import griddata
-from scipy.optimize import brentq
 
 from data_fetcher import DataFetcher
 from logic.bsm_logic import OptionModels
+from logic.volatility_resolver import (
+    implied_volatility_from_price,
+    valid_mid_quote,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,15 +26,9 @@ MAX_DAYS_TO_MATURITY = 100
 MIN_DAYS_TO_MATURITY = 7
 MONEYNESS_MIN = 0.70
 MONEYNESS_MAX = 1.30
-MAX_SPREAD_PCT = 0.50
-MIN_OPEN_INTEREST = 10
-IV_MIN_THRESHOLD = 0.01
-IV_MAX_THRESHOLD = 3.0
 STRIKE_GRID_SIZE = 30
 MATURITY_GRID_SIZE = 12
-DATA_PADDING_PERCENT = 0.05
-INTERPOLATION_METHOD = 'cubic'
-INTERPOLATION_FALLBACK = 'nearest'
+INTERPOLATION_METHOD = 'linear'
 
 
 class ImpliedVolatilitySurface:
@@ -46,7 +43,7 @@ class ImpliedVolatilitySurface:
     Méthodologie :
         - Convention OTM-only : puts pour K < S, calls pour K ≥ S
         - IV calculée par inversion BSM depuis le mid-price (bid+ask)/2
-        - Filtres de liquidité et de moneyness conformes aux standards Bloomberg
+        -         Filtres de liquidité et de moneyness prudents, sans extrapolation
     """
     
     def __init__(self):
@@ -88,38 +85,9 @@ class ImpliedVolatilitySurface:
         Returns:
             IV en décimal (ex: 0.25 pour 25%) ou None si impossible
         """
-        if mid_price <= 0 or T <= 0 or S <= 0 or K <= 0:
-            return None
-
-        # contrôle de validité de l'option (le prix doit refléter la prime de temps)
-        if option_type == 'call':
-            intrinsic = max(0, S * np.exp(-q * T) - K * np.exp(-r * T))
-        else:
-            intrinsic = max(0, K * np.exp(-r * T) - S * np.exp(-q * T))
-
-        if mid_price < intrinsic * 0.95:  # application d'une tolérance pour absorber le bruit de spread
-            return None
-
-        def objective(sigma):
-            try:
-                return self.option_models.black_scholes_price(
-                    S, K, T, r, sigma, q, option_type
-                ) - mid_price
-            except Exception:
-                return 1e10
-
-        try:
-            iv = brentq(
-                objective,
-                IV_MIN_THRESHOLD, IV_MAX_THRESHOLD,
-                xtol=1e-6, maxiter=100,
-            )
-            # exclusion des résultats hors spectre de marché
-            if iv < IV_MIN_THRESHOLD or iv > IV_MAX_THRESHOLD:
-                return None
-            return iv
-        except (ValueError, RuntimeError):
-            return None
+        return implied_volatility_from_price(
+            mid_price, S, K, T, r, q, option_type, self.option_models
+        )
 
     # ─────────────────────────────────────────────────────────────────────
     # Récupération des chaînes d'options
@@ -212,9 +180,9 @@ class ImpliedVolatilitySurface:
         """
         Extrait les données pour la surface de volatilité implicite.
         
-        Pipeline conforme Bloomberg :
+        Pipeline de filtrage et d'interpolation :
           1. Convention OTM-only : puts pour K < S, calls pour K ≥ S
-          2. Filtres de liquidité (bid > 0, ask > 0, spread < MAX_SPREAD_PCT)
+          2. Filtres de liquidité (bid/ask valides, spread maximal de 50 %)
           3. Filtrage par moneyness (MONEYNESS_MIN ≤ K/S ≤ MONEYNESS_MAX)
           4. IV calculée par inversion BSM depuis mid-price (bid+ask)/2 avec r et q
         
@@ -274,11 +242,12 @@ class ImpliedVolatilitySurface:
                     continue
                 
                 T = days_to_maturity / 365.0
-                
+                forward = current_price * np.exp((current_rate - current_dividend) * T)
+
                 # isolation systématique des options hors de la monnaie pour maximiser la liquidité
                 otm_segments = [
-                    ('put',  opt_chain.puts,  lambda k: k < current_price),
-                    ('call', opt_chain.calls, lambda k: k >= current_price),
+                    ('put',  opt_chain.puts,  lambda k: k < forward),
+                    ('call', opt_chain.calls, lambda k: k >= forward),
                 ]
                 
                 for option_type, data, is_otm_fn in otm_segments:
@@ -299,29 +268,8 @@ class ImpliedVolatilitySurface:
                             continue
                         
                         # ── Filtres de liquidité ────────────────────────
-                        bid = row.get('bid', 0)
-                        ask = row.get('ask', 0)
-                        volume = row.get('volume', 0)
-                        oi = row.get('openInterest', 0)
-                        
-                        # standardisation numérique des valeurs manquantes
-                        bid = float(bid) if pd.notna(bid) else 0.0
-                        ask = float(ask) if pd.notna(ask) else 0.0
-                        volume = int(volume) if pd.notna(volume) else 0
-                        oi = int(oi) if pd.notna(oi) else 0
-                        
-                        if bid <= 0 or ask <= 0:
-                            stats['liquidity_filtered'] += 1
-                            continue
-                        
-                        mid = (bid + ask) / 2.0
-                        spread_pct = (ask - bid) / mid if mid > 0 else 999.0
-                        
-                        if spread_pct > MAX_SPREAD_PCT:
-                            stats['liquidity_filtered'] += 1
-                            continue
-                        
-                        if volume <= 0 and oi < MIN_OPEN_INTEREST:
+                        mid = valid_mid_quote(row, require_liquidity=True)
+                        if mid is None:
                             stats['liquidity_filtered'] += 1
                             continue
                         
@@ -377,7 +325,6 @@ class ImpliedVolatilitySurface:
     def interpolate_surface(
         self, 
         surface_data: pd.DataFrame,
-        current_price: Optional[float] = None,
         strike_grid_size: int = STRIKE_GRID_SIZE,
         maturity_grid_size: int = MATURITY_GRID_SIZE,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -386,7 +333,6 @@ class ImpliedVolatilitySurface:
         
         Args:
             surface_data: DataFrame avec ['Strike', 'Days_to_Maturity', 'IV']
-            current_price: Prix spot (pour clamper le strike_min)
             strike_grid_size: Nombre de points pour l'axe Strike
             maturity_grid_size: Nombre de points pour l'axe Maturity
             
@@ -404,51 +350,21 @@ class ImpliedVolatilitySurface:
             surface_data['Days_to_Maturity'].max()
         )
         
-        # marges d'interpolation avec respect des contraintes financières
-        strike_range = strike_max - strike_min
-        maturity_range = maturity_max - maturity_min
-        
-        strike_min -= strike_range * DATA_PADDING_PERCENT
-        strike_max += strike_range * DATA_PADDING_PERCENT
-
-        # sécurisation de la borne inférieure du sous-jacent
-        floor = current_price * 0.5 if current_price else 1.0
-        strike_min = max(floor, strike_min)
-        
-        maturity_min = max(1, maturity_min - maturity_range * 0.1)
-        maturity_max += maturity_range * 0.1
-        
         X_grid = np.linspace(strike_min, strike_max, strike_grid_size)
         Y_grid = np.linspace(maturity_min, maturity_max, maturity_grid_size)
         X_mesh, Y_mesh = np.meshgrid(X_grid, Y_grid)
         
-        # lissage de la nappe par interpolation cubique
+        # Restrict interpolation to the convex hull of observed quotes.
         Z_mesh = griddata(
             points, 
             values, 
             (X_mesh, Y_mesh),
             method=INTERPOLATION_METHOD,
         )
-        
-        # correction des lacunes par l'approche du plus proche voisin
-        mask_nan = np.isnan(Z_mesh)
-        if mask_nan.any():
-            Z_mesh[mask_nan] = griddata(
-                points,
-                values,
-                (X_mesh[mask_nan], Y_mesh[mask_nan]),
-                method=INTERPOLATION_FALLBACK,
-            )
 
-        # redressement des aberrations mathématiques générées aux frontières de l'interpolation
         mask_invalid = Z_mesh <= 0
         if mask_invalid.any():
-            Z_mesh[mask_invalid] = griddata(
-                points,
-                values,
-                (X_mesh[mask_invalid], Y_mesh[mask_invalid]),
-                method=INTERPOLATION_FALLBACK,
-            )
+            Z_mesh[mask_invalid] = np.nan
 
         return X_mesh, Y_mesh, Z_mesh
 
@@ -507,9 +423,7 @@ class ImpliedVolatilitySurface:
         
         logger.info("Interpolation de la surface (%d points)...", len(surface_data))
         try:
-            X_grid, Y_grid, Z_grid = self.interpolate_surface(
-                surface_data, current_price,
-            )
+            X_grid, Y_grid, Z_grid = self.interpolate_surface(surface_data)
             logger.info("Surface interpolée avec succès")
             return surface_data, (X_grid, Y_grid, Z_grid), warning
         except Exception as e:

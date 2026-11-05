@@ -44,7 +44,9 @@
 
 - **Prix spot** via Yahoo Finance (`yfinance`) avec appel d'information mutualisé.
 - **Taux sans risque SOFR** depuis l'API FRED de la Réserve fédérale américaine.
-- **Dividendes** et **volatilité implicite** extraits automatiquement depuis les chaînes d'options.
+- **Dividendes** depuis Yahoo Finance et SOFR depuis FRED.
+- **Volatilité des pricers** résolue de façon cohérente : IV recalculée du bid/ask du contrat exact, interpolation locale sur cotations liquides dans la zone observée, volatilité historique annualisée sur un an, puis défaut de 20 %. Les estimations indiquent leur source ; les strikes/échéances voisins ne sont jamais présentés comme le contrat exact.
+- L'interpolation locale ne télécharge que les échéances nécessaires et réutilise le cache des chaînes ; elle ne recalcule pas la surface 3D complète à chaque pricing. Smile et surface n'extrapolent pas hors des cotations observées. La simulation de sensibilité conserve volontairement les bornes de volatilité choisies par l'utilisateur.
 - **Cache TTL thread-safe** pour optimiser les requêtes externes tout en garantissant un backend strictement sans état.
 
 ### Grecs

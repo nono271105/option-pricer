@@ -190,6 +190,12 @@ export function OptionChainTab() {
         </div>
       )}
 
+      {state.calls.length > 0 && (
+        <p className="px-2 py-1 text-[9px] text-[#B8B8B8]">
+          IV et delta résolus par contrat ; survolez l’IV pour voir sa provenance.
+        </p>
+      )}
+
       {/* Grid Header */}
       {state.calls.length > 0 && (
         <>
@@ -244,7 +250,10 @@ export function OptionChainTab() {
                   <div className={`flex text-[11px] divide-x divide-[#1A1A1A] ${callBg}`}>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#00CC66] font-medium">{call ? call.bid.toFixed(2) : ''}</div>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#FF4444] font-medium">{call ? call.ask.toFixed(2) : ''}</div>
-                    <div className={`flex-1 text-right px-1 py-0.5 ${callItm ? 'text-[#FFCC00]' : 'text-[#888888]'}`}>{call ? call.iv.toFixed(2) : ''}</div>
+                    <div title={call?.iv_source} className={`flex-1 text-right px-1 py-0.5 ${callItm ? 'text-[#FFCC00]' : 'text-[#888888]'}`}>
+                      {call ? call.iv.toFixed(2) : ''}
+                      {call && <span className="sr-only"> — {call.iv_source}</span>}
+                    </div>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#888888]">{call ? (call.volume >= 1000 ? (call.volume / 1000).toFixed(0) + 'k' : call.volume) : ''}</div>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#666666]">{call ? (call.oi >= 1000 ? (call.oi / 1000).toFixed(0) + 'k' : call.oi) : ''}</div>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#D4D4D4]">{call?.delta !== null && call?.delta !== undefined ? call.delta.toFixed(3) : ''}</div>
@@ -259,7 +268,10 @@ export function OptionChainTab() {
                   <div className={`flex text-[11px] divide-x divide-[#1A1A1A] ${putBg}`}>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#00CC66] font-medium">{put ? put.bid.toFixed(2) : ''}</div>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#FF4444] font-medium">{put ? put.ask.toFixed(2) : ''}</div>
-                    <div className={`flex-1 text-right px-1 py-0.5 ${putItm ? 'text-[#FFCC00]' : 'text-[#888888]'}`}>{put ? put.iv.toFixed(2) : ''}</div>
+                    <div title={put?.iv_source} className={`flex-1 text-right px-1 py-0.5 ${putItm ? 'text-[#FFCC00]' : 'text-[#888888]'}`}>
+                      {put ? put.iv.toFixed(2) : ''}
+                      {put && <span className="sr-only"> — {put.iv_source}</span>}
+                    </div>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#888888]">{put ? (put.volume >= 1000 ? (put.volume / 1000).toFixed(0) + 'k' : put.volume) : ''}</div>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#666666]">{put ? (put.oi >= 1000 ? (put.oi / 1000).toFixed(0) + 'k' : put.oi) : ''}</div>
                     <div className="flex-1 text-right px-1 py-0.5 text-[#D4D4D4]">{put?.delta !== null && put?.delta !== undefined ? put.delta.toFixed(3) : ''}</div>

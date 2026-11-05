@@ -77,6 +77,7 @@ export interface SimulationResult {
 export interface SmilePoint {
   strike: number;
   iv: number;
+  iv_source: string;
   type: string;
 }
 
@@ -129,6 +130,7 @@ export interface OptionRow {
   bid: number;
   ask: number;
   iv: number;
+  iv_source: string;
   volume: number;
   oi: number;
   delta: number | null;
@@ -153,6 +155,8 @@ export interface Leg {
   premium: number;
   premium_source: string;
   expiry_used: string | null;
+  sigma?: number;
+  sigma_source?: string;
 }
 
 export interface StrategyMetrics {

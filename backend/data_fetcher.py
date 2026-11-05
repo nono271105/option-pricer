@@ -7,7 +7,6 @@ import os
 import numpy as np
 from typing import Optional, Tuple
 from cache import global_cache_price, global_cache_chain, global_cache_static
-from validation import MAX_STRIKE_GAP_RATIO
 
 load_dotenv()
 
@@ -48,16 +47,19 @@ class DataFetcher:
         
         try:
             ticker = yf.Ticker(ticker_symbol)
-            hist = ticker.history(period=period)
+            hist = ticker.history(period=period, auto_adjust=True)
             if hist.empty:
                 return None
             
-            # volatilité annualisée par écart-type des rendements quotidiens
-            returns = hist['Close'].pct_change(fill_method=None).dropna()
-            if len(returns) < 2: 
+            closes = hist["Close"].astype(float)
+            closes = closes[np.isfinite(closes) & (closes > 0)]
+            returns = np.log(closes).diff().dropna()
+            if len(returns) < 20:
                 return None
             
-            annual_volatility = returns.std() * np.sqrt(252)
+            annual_volatility = float(returns.std() * np.sqrt(252))
+            if not np.isfinite(annual_volatility) or annual_volatility <= 0:
+                return None
             # on met en cache avant de retourner
             global_cache_static.set(cache_key, annual_volatility)
             return annual_volatility
@@ -299,10 +301,17 @@ class DataFetcher:
         Returns:
             Tuple[Optional[float], Optional[float], Optional[str]]: (IV, prix, date_expiration)
         """
-        opt_chain, closest_date = self.get_option_data_chain(ticker_symbol, maturity_datetime)
-
-        if opt_chain is None or closest_date is None:
+        expiry = maturity_datetime.date().isoformat()
+        try:
+            expiries = self.get_available_expiries(ticker_symbol)
+        except Exception as e:
+            logger.warning("Échéances indisponibles pour %s : %s", ticker_symbol, e)
             return None, None, None
+        if expiry not in expiries:
+            return None, None, None
+        opt_chain = self.get_option_chain_for_expiry(ticker_symbol, expiry)
+        if opt_chain is None:
+            return None, None, expiry
 
         option_type = option_type.lower()
         
@@ -320,30 +329,28 @@ class DataFetcher:
             logger.warning("Aucune donnée d'option pour cette expiration : %s", ticker_symbol)
             return None, None, closest_date
             
-        # différence absolue pour identifier la ligne la plus proche
-        data = data.assign(abs_diff=lambda df: abs(df['strike'] - strike))
-        closest_row = data.sort_values('abs_diff').iloc[0]
-        
-        gap = abs(float(closest_row['strike']) - strike) / strike
-        if gap > MAX_STRIKE_GAP_RATIO:
-            logger.warning("Strike %s trop éloigné du strike coté %s (écart %.1f%%) pour %s",
-                           strike, closest_row['strike'], gap * 100, ticker_symbol)
-            return None, None, closest_date
-        
-        iv = closest_row['impliedVolatility']
-        
-        bid = float(closest_row.get('bid', 0) or 0)
-        ask = float(closest_row.get('ask', 0) or 0)
-        if bid > 0 and ask > 0:
-            price = (bid + ask) / 2.0
-        else:
-            price = closest_row.get('lastPrice')
-        
-        # une IV nulle ou négative n'est pas exploitable pour le pricing
-        if iv is None or iv <= 0.001 or price is None or price <= 0:
+        matches = data[np.isclose(data["strike"].astype(float), strike, rtol=0, atol=1e-8)]
+        if matches.empty:
+            return None, None, expiry
+        row = matches.iloc[0]
+        try:
+            iv = float(row.get("impliedVolatility"))
+        except (TypeError, ValueError):
+            iv = None
+        try:
+            bid = float(row.get("bid", 0) or 0)
+            ask = float(row.get("ask", 0) or 0)
+        except (TypeError, ValueError):
+            bid, ask = 0.0, 0.0
+        mid = (bid + ask) / 2.0 if bid > 0 and ask >= bid else None
+        spread_ratio = (ask - bid) / mid if mid else float("inf")
+        if mid is None or mid <= 0 or spread_ratio > 0.50:
             logger.debug(
-                "IV (%s) ou Prix (%s) non valide pour K=%s type=%s", iv, price, strike, option_type
+                "Cotation bid=%s ask=%s non valide pour K=%s type=%s",
+                bid, ask, strike, option_type,
             )
-            return None, None, closest_date
-            
-        return iv, price, closest_date
+            return None, None, expiry
+        if iv is None or not np.isfinite(iv) or not 0.01 <= iv <= 3.0:
+            return None, mid, expiry
+
+        return iv, mid, expiry

@@ -64,10 +64,6 @@ VALID_EXOTIC_TYPES: frozenset = frozenset({
     "barrier", "asian", "lookback", "digital"
 })
 
-# Seuil d'écart de strike max acceptable dans get_implied_volatility_and_price
-MAX_STRIKE_GAP_RATIO: float = 0.10   # 10 % du strike demandé — décision prudente
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Fonctions de validation des scalaires
 # ─────────────────────────────────────────────────────────────────────────────

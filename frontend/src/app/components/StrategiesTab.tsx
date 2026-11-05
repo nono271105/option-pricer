@@ -238,6 +238,11 @@ export function StrategiesTab() {
                       <td className="py-1 px-2 text-[#888888]">
                         {leg.premium_source}
                         {leg.expiry_used && ` · ${formatDateFR(leg.expiry_used)}`}
+                        {leg.sigma !== undefined && (
+                          <span className="block text-[9px] text-[#B8B8B8]">
+                            IV {(leg.sigma * 100).toFixed(2)} % · {leg.sigma_source}
+                          </span>
+                        )}
                       </td>
                       <td className={`py-1 px-2 font-bold ${flux < 0 ? 'text-[#FF6B6B]' : 'text-[#6BCB77]'}`}>
                         {flux >= 0 ? '+' : ''}{flux.toFixed(4)} $

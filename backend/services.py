@@ -26,6 +26,7 @@ from logic.exotic_options_logic import (
 from logic.volatility_smile_logic import VolatilitySmileLogic
 from logic.strategy_logic import StrategyManager
 from logic.volatility_surface_logic import ImpliedVolatilitySurface
+from logic.volatility_resolver import ImpliedVolatilityResolver
 from validation import (
     validate_pricing_params,
     validate_N_crr,
@@ -64,6 +65,7 @@ _simulation = SimulationLogic(_option_models)
 _smile_logic = VolatilitySmileLogic()
 _strategy_mgr = StrategyManager()
 _surface_logic = ImpliedVolatilitySurface()
+_volatility_resolver = ImpliedVolatilityResolver(_data_fetcher, _option_models)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -85,12 +87,26 @@ def _safe(val: Any) -> Any:
     return val
 
 
-def _select_sigma(iv: Optional[float], hist_vol: Optional[float]) -> tuple[float, str]:
-    if iv is not None:
-        return float(iv), "IV implicite"
-    if hist_vol is not None:
-        return float(hist_vol), "Volatilité historique"
-    return 0.20, "Défaut (20 %)"
+def _resolve_sigma(
+    ticker: str,
+    S: float,
+    K: float,
+    expiry: str,
+    r: float,
+    q: float,
+    option_type: str,
+    hist_vol: Optional[float],
+):
+    return _volatility_resolver.resolve(
+        ticker=ticker,
+        S=S,
+        K=K,
+        expiry=expiry,
+        r=r,
+        q=q,
+        option_type=option_type,
+        hist_vol=hist_vol,
+    )
 
 
 def _greek_curve(
@@ -190,7 +206,10 @@ def fetch_market_data(ticker: str) -> Dict[str, Any]:
             hist_vol = _safe(results["vol"])
         else:
             hist_vol = None
-            warnings.append("Volatilité historique indisponible, valeur par défaut 20 %")
+            warnings.append(
+                "Volatilité historique indisponible ; le défaut de 20 % ne sera utilisé "
+                "que si aucune IV exploitable n'est trouvée."
+            )
 
         company = company_res or ticker
 
@@ -232,8 +251,14 @@ def get_option_chain(
     maturity_dt = validate_date_str(expiry_str, field_name="expiry_str")
 
     try:
-        opt_chain, closest_date = _data_fetcher.get_option_data_chain(ticker, maturity_dt)
-        if opt_chain is None or closest_date is None:
+        closest_date = maturity_dt.date().isoformat()
+        available_expiries = _data_fetcher.get_available_expiries(ticker)
+        if closest_date not in available_expiries:
+            raise DataSourceError(
+                f"L'échéance {closest_date} n'est pas cotée pour {ticker}."
+            )
+        opt_chain = _data_fetcher.get_option_chain_for_expiry(ticker, closest_date)
+        if opt_chain is None:
             raise DataSourceError(f"Aucune chaîne d'options pour {ticker}")
 
         S_val = S if S is not None else _data_fetcher.get_live_price(ticker)
@@ -241,7 +266,15 @@ def get_option_chain(
             raise DataSourceError(f"Prix introuvable pour {ticker}")
         r_val = r if r is not None else 0.05
         q_val = q if q is not None else 0.0
+        try:
+            hist_vol = _data_fetcher.get_historical_volatility(ticker, "1y")
+        except Exception as exc:
+            logger.warning("Volatilité historique indisponible pour %s : %s", ticker, exc)
+            hist_vol = None
         T = max((datetime.strptime(closest_date, "%Y-%m-%d").date() - date.today()).days / 365.0, 1 / 365)
+        iv_curve = _volatility_resolver.build_expiry_curve(
+            opt_chain, closest_date, S_val, r_val, q_val
+        )
 
         def _process_side(df, otype: str) -> List[Dict[str, Any]]:
             rows = []
@@ -249,15 +282,19 @@ def get_option_chain(
                 K = float(row.get("strike", 0))
                 bid = float(row.get("bid", 0) or 0)
                 ask = float(row.get("ask", 0) or 0)
-                iv_raw = float(row.get("impliedVolatility", 0) or 0)
                 v = row.get("volume", 0)
                 vol_raw = 0 if v is None or np.isnan(v) else int(v)
                 oi = row.get("openInterest", 0)
                 oi_raw = 0 if oi is None or np.isnan(oi) else int(oi)
 
-                sigma = iv_raw if iv_raw > 0.01 else 0.25
+                estimate = _volatility_resolver.resolve_in_chain(
+                    opt_chain, closest_date, S_val, K, r_val, q_val, otype, hist_vol,
+                    curve=iv_curve,
+                )
                 try:
-                    g = _option_models.calculate_greeks(S_val, K, T, r_val, sigma, q_val, otype)
+                    g = _option_models.calculate_greeks(
+                        S_val, K, T, r_val, estimate.sigma, q_val, otype
+                    )
                     delta_val = round(g["delta"], 4)
                 except Exception:
                     delta_val = None
@@ -266,7 +303,8 @@ def get_option_chain(
                     "strike": K,
                     "bid": bid,
                     "ask": ask,
-                    "iv": round(iv_raw * 100, 2),
+                    "iv": round(estimate.sigma * 100, 2),
+                    "iv_source": estimate.source,
                     "volume": vol_raw,
                     "oi": oi_raw,
                     "delta": delta_val,
@@ -308,8 +346,10 @@ def calculate_bsm(
     validate_pricing_params(S_f, K_f, T, r_f, q_f, option_type)
     validate_position(position)
 
-    iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K_f, mat_dt, option_type)
-    sigma, sigma_source = _select_sigma(iv, hist_vol)
+    volatility = _resolve_sigma(
+        ticker, S_f, K_f, mat_dt.date().isoformat(), r_f, q_f, option_type, hist_vol
+    )
+    sigma, sigma_source = volatility.sigma, volatility.source
 
     price = _option_models.black_scholes_price(S_f, K_f, T, r_f, sigma, q_f, option_type)
     price = round(float(price), 4)
@@ -370,8 +410,10 @@ def calculate_crr(
     validate_position(position)
     validate_N_crr(N_i)
 
-    iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K_f, mat_dt, option_type)
-    sigma_used, sigma_source = _select_sigma(iv, hist_vol)
+    volatility = _resolve_sigma(
+        ticker, S_f, K_f, mat_dt.date().isoformat(), r_f, q_f, option_type, hist_vol
+    )
+    sigma_used, sigma_source = volatility.sigma, volatility.source
 
     price = _crr_models.cox_ross_rubinstein_price(
         S=S_f, K=K_f, T=T, r=r_f, sigma=sigma_used, q=q_f, N=N_i, option_type=option_type
@@ -483,7 +525,12 @@ def calculate_smile(
     maturity_dt = validate_date_str(expiry_str, field_name="expiry_str")
 
     try:
-        opt_chain, closest_date = _data_fetcher.get_option_data_chain(ticker, maturity_dt)
+        closest_date = maturity_dt.date().isoformat()
+        if closest_date not in _data_fetcher.get_available_expiries(ticker):
+            raise DataSourceError(
+                f"L'échéance {closest_date} n'est pas cotée pour {ticker}."
+            )
+        opt_chain = _data_fetcher.get_option_chain_for_expiry(ticker, closest_date)
         if opt_chain is None:
             raise DataSourceError(f"Aucune chaîne d'options disponible pour {ticker}")
 
@@ -607,8 +654,10 @@ def price_exotic(
     if exotic_type == "asian":
         validate_averaging(averaging)
 
-    iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, K_f, mat_dt, option_type)
-    sigma, sigma_source = _select_sigma(iv, hist_vol)
+    volatility = _resolve_sigma(
+        ticker, S_f, K_f, mat_dt.date().isoformat(), r_f, q_f, option_type, hist_vol
+    )
+    sigma, sigma_source = volatility.sigma, volatility.source
 
     results: Dict[str, Any] = {}
 
@@ -724,27 +773,65 @@ def calculate_strategy(
     hist_vol: Optional[float] = None,
 ) -> Dict[str, Any]:
     S_f, r_f, q_f = float(S), float(r), float(q)
-    T_f = max(float(T_days) / 365.0, 1e-6)
     validate_r(r_f)
     validate_q(q_f)
-
     maturity_dt = validate_date_str(expiry_str, field_name="expiry_str")
+    expiry = maturity_dt.date().isoformat()
+    T = max((maturity_dt.date() - date.today()).days, 1) / 365.0
+    definition = _strategy_mgr.STRATEGY_DEFINITIONS.get(strategy_name)
+    if definition is None:
+        raise ValueError(f"Stratégie inconnue : {strategy_name}")
 
-    iv, _, _ = _data_fetcher.get_implied_volatility_and_price(ticker, S_f, maturity_dt, "call")
-    sigma_used, sigma_source = _select_sigma(iv, hist_vol)
-
-    legs, T_eff = _strategy_mgr.build_legs(
-        strategy_name, S_f, T_f, r_f, sigma_used, q_f, maturity_dt, ticker,
-        _data_fetcher, _option_models
-    )
+    legs = []
+    for leg_definition in definition:
+        option_type = leg_definition["type"]
+        position = leg_definition["pos"]
+        strike = round(S_f * (1 + leg_definition["offset"]), 2)
+        estimate = _resolve_sigma(
+            ticker, S_f, strike, expiry, r_f, q_f, option_type, hist_vol
+        )
+        premium = estimate.market_price
+        premium_source = "Cotation bid/ask" if premium is not None else "BSM estimé"
+        if premium is None:
+            premium = float(_option_models.black_scholes_price(
+                S=S_f, K=strike, T=T, r=r_f, sigma=estimate.sigma, q=q_f,
+                option_type=option_type,
+            ))
+        legs.append({
+            "option_type": option_type,
+            "position": position,
+            "strike": strike,
+            "premium": premium,
+            "premium_source": premium_source,
+            "expiry_used": expiry if estimate.market_price is not None else None,
+            "sigma": estimate.sigma,
+            "sigma_source": estimate.source,
+        })
 
     S_range = np.linspace(S_f * 0.6, S_f * 1.4, 300)
     payoff = _strategy_mgr.compute_payoff(legs, S_range)
-    value_today = _strategy_mgr.compute_value_today(
-        legs, S_range, S_f, T_eff, r_f, sigma_used, q_f, _option_models
+    cost = sum(
+        leg["premium"] if leg["position"] == "long" else -leg["premium"]
+        for leg in legs
     )
+    value_today = np.full(len(S_range), -cost, dtype=float)
+    total_greeks = {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0, "rho": 0.0}
+    for leg in legs:
+        sign = 1 if leg["position"] == "long" else -1
+        value_today += sign * _option_models.black_scholes_price(
+            S=S_range, K=leg["strike"], T=T, r=r_f, sigma=leg["sigma"],
+            q=q_f, option_type=leg["option_type"],
+        )
+        leg_greeks = _option_models.calculate_greeks(
+            S=S_f, K=leg["strike"], T=T, r=r_f, sigma=leg["sigma"],
+            q=q_f, option_type=leg["option_type"],
+        )
+        for greek in total_greeks:
+            total_greeks[greek] += sign * leg_greeks[greek]
+
     metrics = _strategy_mgr.compute_metrics(legs, S_range, payoff)
-    greeks = _strategy_mgr.compute_greeks(legs, S_f, T_eff, r_f, sigma_used, q_f, _option_models)
+    greeks = {key: round(float(value), 6) for key, value in total_greeks.items()}
+    sigma_used = float(np.mean([leg["sigma"] for leg in legs]))
 
     def _fmt(val):
         if val is None or (isinstance(val, float) and not np.isfinite(val)):
@@ -771,7 +858,7 @@ def calculate_strategy(
         ],
         "metrics": ser_metrics,
         "sigma": sigma_used,
-        "sigma_source": sigma_source,
+        "sigma_source": "Moyenne des IV résolues par jambe",
         "greeks": greeks,
         "error": None,
     }
@@ -810,7 +897,6 @@ def calculate_custom_strategy(
         raise DataSourceError(f"Aucune échéance cotée disponible pour {ticker}.")
 
     S_f, r_f, q_f = float(S), float(r), float(q)
-    base_sigma, base_sigma_source = _select_sigma(None, hist_vol)
     parsed_legs: List[Dict[str, Any]] = []
 
     for index, leg in enumerate(legs, start=1):
@@ -830,9 +916,7 @@ def calculate_custom_strategy(
                 f"n'est pas une échéance cotée pour {ticker}.",
                 "VALIDATION_INVALID_VALUE",
             )
-        T = max((expiry_dt.date() - date.today()).days / 365.0, 1e-6)
-
-        quote_note = None
+        T = max((expiry_dt.date() - date.today()).days, 1) / 365.0
         try:
             chain = _data_fetcher.get_option_chain_for_expiry(ticker, expiry)
         except Exception as exc:
@@ -841,52 +925,34 @@ def calculate_custom_strategy(
                 ticker, expiry, exc,
             )
             chain = None
-            quote_note = "Chaîne indisponible, estimation BSM"
         option_data = getattr(chain, "calls" if option_type == "call" else "puts", None)
-        matching_row = None
-        if option_data is not None and not option_data.empty:
-            matches = option_data[np.isclose(option_data["strike"], strike, rtol=0, atol=1e-8)]
-            if not matches.empty:
-                matching_row = matches.iloc[0]
-            else:
-                quote_note = "Strike non coté, estimation BSM"
-        elif quote_note is None:
-            quote_note = "Chaîne vide, estimation BSM"
-
-        market_iv: Optional[float] = None
-        market_price: Optional[float] = None
-        if matching_row is not None:
-            try:
-                candidate_iv = float(matching_row["impliedVolatility"])
-                if np.isfinite(candidate_iv) and 0.001 < candidate_iv <= 10:
-                    market_iv = candidate_iv
-            except (KeyError, TypeError, ValueError):
-                pass
-
-            try:
-                bid = float(matching_row.get("bid", 0) or 0)
-                ask = float(matching_row.get("ask", 0) or 0)
-                last = float(matching_row.get("lastPrice", 0) or 0)
-                candidate_price = (bid + ask) / 2 if bid > 0 and ask > 0 else last
-                if np.isfinite(candidate_price) and candidate_price > 0:
-                    market_price = candidate_price
-            except (TypeError, ValueError):
-                pass
-
-        sigma, sigma_source = (
-            (market_iv, "IV implicite du contrat")
-            if market_iv is not None
-            else (base_sigma, base_sigma_source)
+        has_exact_strike = (
+            option_data is not None
+            and not option_data.empty
+            and np.isclose(option_data["strike"].astype(float), strike, rtol=0, atol=1e-8).any()
         )
-        premium_source = "Cotation" if market_price is not None else "BSM estimé"
+        estimate = _resolve_sigma(
+            ticker, S_f, strike, expiry, r_f, q_f, option_type, hist_vol
+        )
+        market_price = estimate.market_price
+        if market_price is not None:
+            quote_note = None
+            premium_source = "Cotation bid/ask"
+        elif chain is None:
+            quote_note = "Chaîne indisponible, estimation BSM"
+            premium_source = "BSM estimé"
+        elif not has_exact_strike:
+            quote_note = "Strike non coté, estimation BSM"
+            premium_source = "BSM estimé"
+        else:
+            quote_note = "Cotation bid/ask inexploitable, estimation BSM"
+            premium_source = "BSM estimé"
         premium = market_price
         if premium is None:
             premium = float(_option_models.black_scholes_price(
-                S=S_f, K=strike, T=T, r=r_f, sigma=sigma, q=q_f,
+                S=S_f, K=strike, T=T, r=r_f, sigma=estimate.sigma, q=q_f,
                 option_type=option_type,
             ))
-            if matching_row is not None:
-                quote_note = "Prix coté indisponible, estimation BSM"
         if not np.isfinite(premium) or premium < 0:
             raise DataSourceError(
                 f"Impossible de valoriser la jambe {index} ({option_type} {strike:g}, {expiry})."
@@ -900,8 +966,8 @@ def calculate_custom_strategy(
             "premium": premium,
             "premium_source": premium_source,
             "expiry_used": expiry if market_price is not None else None,
-            "sigma": sigma,
-            "sigma_source": sigma_source,
+            "sigma": estimate.sigma,
+            "sigma_source": estimate.source,
             "T": T,
             "pricing_note": quote_note,
         })

@@ -93,11 +93,13 @@ class DataCache:
 PRICE_TTL  = 60     # 1 minute  — prix en direct, très volatil
 CHAIN_TTL  = 300    # 5 minutes — chaîne d'options, change peu intra-day
 STATIC_TTL = 3600   # 1 heure   — SOFR, nom de société, dividende
+IV_TTL     = 300    # 5 minutes — estimations calculées depuis les chaînes d'options
 
 # Instances partagées entre tous les modules
 global_cache_price  = DataCache(ttl_seconds=PRICE_TTL)
 global_cache_chain  = DataCache(ttl_seconds=CHAIN_TTL)
 global_cache_static = DataCache(ttl_seconds=STATIC_TTL)
+global_cache_iv     = DataCache(ttl_seconds=IV_TTL)
 
 # Alias de compatibilité ascendante : pointe sur le cache statique (comportement d'origine)
 global_cache = global_cache_static
