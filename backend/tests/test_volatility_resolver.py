@@ -79,15 +79,15 @@ def test_exact_contract_iv_is_recomputed_from_usable_bid_ask_mid():
     assert result.expiry_used == expiry
 
 
-def test_exact_yahoo_iv_is_used_when_no_bid_ask_is_available():
+def test_unquoted_vendor_iv_is_ignored_in_favor_of_historical_volatility():
     expiry = expiry_in(35)
-    option_chain = chain(calls=[quote_row(100, expiry, 0.29, no_quote=True)])
+    option_chain = chain(calls=[quote_row(100, expiry, 0.03, no_quote=True)])
     resolver = ImpliedVolatilityResolver(FakeFetcher([expiry], {expiry: option_chain}))
 
-    result = resolver.resolve("AAPL", 100, 100, expiry, 0.04, 0.01, "call", 0.18)
+    result = resolver.resolve("AAPL", 100, 100, expiry, 0.04, 0.01, "call", 0.1359)
 
-    assert result.sigma == 0.29
-    assert result.source == "IV Yahoo (contrat exact)"
+    assert result.sigma == 0.1359
+    assert result.source == "Volatilité historique"
     assert result.market_price is None
 
 

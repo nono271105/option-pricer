@@ -304,20 +304,6 @@ class ImpliedVolatilityResolver:
                     sigma, "IV recalculée (bid/ask)", mid, expiry
                 )
 
-        vendor_iv = valid_iv(row.get("impliedVolatility"))
-        try:
-            has_partial_quote = (
-                float(row.get("bid", 0) or 0) > 0
-                or float(row.get("ask", 0) or 0) > 0
-            )
-        except (TypeError, ValueError):
-            has_partial_quote = True
-        if vendor_iv is not None and mid is None and not has_partial_quote:
-            return VolatilityEstimate(
-                vendor_iv, "IV Yahoo (contrat exact)",
-                expiry_used=expiry,
-                note="IV fournie par Yahoo, cotation bid/ask inexploitable",
-            )
         return None
 
     def _interpolate_expiry(
