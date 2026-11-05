@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://option-pricer-alpha.vercel.app/sitemap.xml
+Sitemap: https://option-pricer-mas.vercel.app/sitemap.xml
