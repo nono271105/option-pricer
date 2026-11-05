@@ -29,6 +29,7 @@ export function CustomStrategyBuilder({ onBack }: { onBack: () => void }) {
   const market = useMarket();
   const [ticker, setTicker] = useState(market.ticker);
   const [expiries, setExpiries] = useState<string[]>([]);
+  const [commonExpiry, setCommonExpiry] = useState('');
   const [expiriesLoading, setExpiriesLoading] = useState(false);
   const [expiryError, setExpiryError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -46,6 +47,7 @@ export function CustomStrategyBuilder({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     const normalizedTicker = ticker.trim().toUpperCase();
     setExpiries([]);
+    setCommonExpiry('');
     setExpiryError(null);
     setResult(null);
     if (!normalizedTicker) {
@@ -61,16 +63,21 @@ export function CustomStrategyBuilder({ onBack }: { onBack: () => void }) {
         if (cancelled) return;
         if (response.error) {
           setExpiryError(response.error);
+          setCommonExpiry('');
           setLegs(current => current.map(leg => ({ ...leg, expiry_str: '' })));
           return;
         }
         if (response.expiries.length === 0) {
           setExpiryError(`Aucune échéance cotée disponible pour ${normalizedTicker}.`);
+          setCommonExpiry('');
           setLegs(current => current.map(leg => ({ ...leg, expiry_str: '' })));
           return;
         }
 
         setExpiries(response.expiries);
+        setCommonExpiry(current =>
+          response.expiries.includes(current) ? current : response.expiries[0]
+        );
         setLegs(current => current.map(leg => ({
           ...leg,
           expiry_str: response.expiries.includes(leg.expiry_str)
@@ -100,6 +107,7 @@ export function CustomStrategyBuilder({ onBack }: { onBack: () => void }) {
 
   const handleTickerChange = (value: string) => {
     setTicker(value.toUpperCase());
+    setCommonExpiry('');
     setResult(null);
     setError(null);
     setLegs(current => current.map(leg => ({ ...leg, expiry_str: '' })));
@@ -121,6 +129,12 @@ export function CustomStrategyBuilder({ onBack }: { onBack: () => void }) {
     if (legs.length <= 1) return;
     setResult(null);
     setLegs(current => current.filter(leg => leg.id !== id));
+  };
+
+  const applyCommonExpiry = () => {
+    if (!commonExpiry || !expiries.includes(commonExpiry)) return;
+    setResult(null);
+    setLegs(current => current.map(leg => ({ ...leg, expiry_str: commonExpiry })));
   };
 
   const invalidLeg = legs.some(leg =>
@@ -208,6 +222,33 @@ export function CustomStrategyBuilder({ onBack }: { onBack: () => void }) {
             {error}
           </p>
         )}
+
+        <div className="flex flex-wrap items-end gap-2 border-t border-[#222222] px-2 py-1.5">
+          <label htmlFor="custom-common-expiry" className="flex flex-col gap-1 text-[10px] text-[#B8B8B8]">
+            Échéance à appliquer à toutes les jambes
+            <select
+              id="custom-common-expiry"
+              value={commonExpiry}
+              onChange={event => setCommonExpiry(event.target.value)}
+              disabled={expiriesLoading || expiries.length === 0}
+              className={`${SELECT} w-40`}
+            >
+              {expiries.length === 0
+                ? <option value="">{expiriesLoading ? 'Chargement…' : 'Indisponible'}</option>
+                : expiries.map(expiry => (
+                  <option key={expiry} value={expiry}>{formatDateFR(expiry)}</option>
+                ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={applyCommonExpiry}
+            disabled={loading || expiriesLoading || expiries.length === 0 || !commonExpiry}
+            className="border border-[#444444] px-2.5 py-1 text-[10px] font-bold text-white hover:bg-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#4A90E2]"
+          >
+            Appliquer à toutes
+          </button>
+        </div>
 
         <div className="overflow-x-auto border-t border-[#222222]">
           <table className="w-full min-w-[720px] table-fixed border-collapse text-[11px]">
@@ -342,7 +383,9 @@ export function CustomStrategyBuilder({ onBack }: { onBack: () => void }) {
                           <td className="px-2 py-1.5 text-[#D4D4D4]">{formatAmount(leg.premium)}</td>
                           <td className="px-2 py-1.5 text-left text-[#B8B8B8]">
                             <span>{leg.premium_source}{leg.expiry_used ? ` · ${formatDateFR(leg.expiry_used)}` : ''}</span>
-                            <span className="block text-[9px] text-[#888888]">{leg.sigma_source}</span>
+                            <span className="block text-[9px] text-[#B8B8B8]">
+                              IV {(leg.sigma * 100).toFixed(2)} % · {leg.sigma_source}
+                            </span>
                             {leg.pricing_note && <span className="block text-[9px] text-[#FFCC00]">{leg.pricing_note}</span>}
                           </td>
                           <td className={`px-2 py-1.5 font-bold ${flow < 0 ? 'text-[#FF6B6B]' : 'text-[#6BCB77]'}`}>
