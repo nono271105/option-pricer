@@ -47,7 +47,7 @@ N_SIMS_MAX: int = 200_000    # décision prudente : limite mémoire/temps
 N_STEPS_MIN: int = 1
 N_STEPS_MAX: int = 1_000     # décision prudente
 
-MC_MAX_CELLS: int = 10_000_000  # plafond mémoire : n_sims * n_steps <= 10M (< 1 Go de RAM)
+MC_MAX_CELLS: int = 15_000_000  # plafond mémoire : n_sims * n_steps <= 15M
 
 # Arbre CRR
 N_CRR_MIN: int = 2
@@ -223,7 +223,7 @@ def validate_n_steps(n_steps: int) -> None:
 def validate_mc_budget(n_sims: int, n_steps: int) -> None:
     """
     Vérifie que le produit n_sims * n_steps ne dépasse pas le plafond de calcul.
-    Plafond : MC_MAX_CELLS (10 millions de cellules).
+    Plafond : MC_MAX_CELLS (15 millions de cellules).
     """
     total_cells = int(n_sims) * int(n_steps)
     if total_cells > MC_MAX_CELLS:
