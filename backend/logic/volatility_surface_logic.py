@@ -34,7 +34,7 @@ MONEYNESS_MAX = 1.30                # K/S maximum
 STRIKE_GRID_SIZE = 30
 MATURITY_GRID_SIZE = 12
 INTERPOLATION_METHOD = 'linear'
-MIN_POINTS_FOR_INTERPOLATION = 4
+MIN_POINTS_FOR_INTERPOLATION = 3  # un triangle suffit pour une triangulation 2D
 DAYS_IN_YEAR = 365.0
 MARKET_TZ = ZoneInfo("America/New_York")
 
